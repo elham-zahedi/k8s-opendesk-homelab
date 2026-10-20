@@ -154,3 +154,40 @@ use_kubespray() {
   INV="$INV_DIR/inventory.ini"
   cd "$KUBESPRAY_DIR"   # ansible.cfg of Kubespray is only used from here
 }
+
+# render_template FILE VAR... – prints FILE with every @VAR@ replaced by the value of $VAR
+render_template() {
+  local file="$1" content v; shift
+  content="$(cat "$file")"
+  for v in "$@"; do content="${content//@${v}@/${!v}}"; done
+  grep -q '@[A-Z_]*@' <<<"$content" && die "unresolved placeholder in $file: $(grep -o '@[A-Z_]*@' <<<"$content" | head -1)"
+  printf '%s\n' "$content"
+}
+
+# use_kubectl – kubectl against KUBECONFIG_PATH
+use_kubectl() {
+  require_cmd kubectl
+  export KUBECONFIG="$KUBECONFIG_PATH"
+  kubectl get --raw=/readyz >/dev/null 2>&1 || die "Kubernetes API not reachable with $KUBECONFIG_PATH"
+}
+
+# helm_chart_version NAMESPACE RELEASE – prints the installed chart version (empty if not installed)
+helm_chart_version() {
+  helm -n "$1" list -a -f "^$2\$" -o json 2>/dev/null \
+    | python3 -c 'import json,sys; r=json.load(sys.stdin); print(r[0]["chart"].rsplit("-",1)[1] + " " + r[0]["status"] if r else "")'
+}
+
+# set_yaml_var FILE KEY VALUE – sets "KEY: VALUE"; replaces an existing or commented-out line
+set_yaml_var() {
+  local file="$1" key="$2" value="$3"
+  [[ -f "$file" || "$DRY_RUN" == 1 ]] || die "$file not found"
+  if grep -qxE "${key}: ${value}" "$file" 2>/dev/null; then
+    ok "$key: $value (already set)"
+  elif grep -qE "^${key}:" "$file" 2>/dev/null; then
+    run sed -i -E "s|^${key}:.*|${key}: ${value}|" "$file"
+  elif grep -qE "^# *${key}:" "$file" 2>/dev/null; then
+    run sed -i -E "0,/^# *${key}:.*/s||${key}: ${value}|" "$file"
+  else
+    append_line "$file" "${key}: ${value}"
+  fi
+}

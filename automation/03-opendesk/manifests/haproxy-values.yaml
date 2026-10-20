@@ -1,0 +1,17 @@
+# HAProxy Ingress values (doc 03, section 6.1)
+controller:
+  kind: Deployment
+  replicaCount: 2
+  service:
+    type: LoadBalancer
+    annotations:
+      metallb.io/loadBalancerIPs: @LB_IP@
+  ingressClassResource:
+    enabled: true
+    name: haproxy
+    default: true          # the openDesk ingresses do not set a class
+  config:
+    max-connections: "10000"
+    config-global: |
+      tune.bufsize 65536
+      tune.http.maxhdr 256

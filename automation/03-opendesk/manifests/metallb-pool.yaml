@@ -1,0 +1,19 @@
+# MetalLB address range for LoadBalancer services (doc 03, section 4.2).
+# Exclude this range in the DHCP server of the VM network.
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: cluster-pool
+  namespace: metallb-system
+spec:
+  addresses:
+    - @LB_RANGE@
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: cluster-l2
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+    - cluster-pool

@@ -1,0 +1,16 @@
+# Kubespray group_vars (k8s-cluster.yml) for openDesk (doc 03, section 2):
+# forward only the openDesk and AD zones to the domain controller.
+coredns_external_zones:
+- zones:
+  - @DOMAIN@
+  - @AD_DOMAIN@
+  nameservers:
+  - @AD_DC_IP@
+  cache: 30
+nodelocaldns_external_zones:
+- zones:
+  - @DOMAIN@
+  - @AD_DOMAIN@
+  nameservers:
+  - @AD_DC_IP@
+  cache: 30

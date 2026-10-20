@@ -78,26 +78,11 @@ fi
 step "3/3 Cluster settings in group_vars"
 G="$INV_DIR/group_vars/k8s_cluster"
 
-# set_var FILE KEY VALUE – sets "KEY: VALUE"; replaces an existing or commented-out line
-set_var() {
-  local file="$1" key="$2" value="$3"
-  [[ -f "$file" || "$DRY_RUN" == 1 ]] || die "$file not found"
-  if grep -qxE "${key}: ${value}" "$file" 2>/dev/null; then
-    ok "$key: $value (already set)"
-  elif grep -qE "^${key}:" "$file" 2>/dev/null; then
-    run sed -i -E "s|^${key}:.*|${key}: ${value}|" "$file"
-  elif grep -qE "^# *${key}:" "$file" 2>/dev/null; then
-    run sed -i -E "0,/^# *${key}:.*/s||${key}: ${value}|" "$file"
-  else
-    append_line "$file" "${key}: ${value}"
-  fi
-}
-
-set_var "$G/k8s-net-calico.yml" calico_veth_mtu        "$CALICO_MTU"   # pod MTU = node MTU - 50
-set_var "$G/addons.yml"         metrics_server_enabled true            # kubectl top
-set_var "$G/addons.yml"         helm_enabled           true
-set_var "$G/k8s-cluster.yml"    kubeconfig_localhost   true            # admin.conf to artifacts/
-set_var "$G/k8s-cluster.yml"    kubectl_localhost      true            # kubectl binary to artifacts/
+set_yaml_var "$G/k8s-net-calico.yml" calico_veth_mtu        "$CALICO_MTU"   # pod MTU = node MTU - 50
+set_yaml_var "$G/addons.yml"         metrics_server_enabled true            # kubectl top
+set_yaml_var "$G/addons.yml"         helm_enabled           true
+set_yaml_var "$G/k8s-cluster.yml"    kubeconfig_localhost   true            # admin.conf to artifacts/
+set_yaml_var "$G/k8s-cluster.yml"    kubectl_localhost      true            # kubectl binary to artifacts/
 
 if [[ "$DRY_RUN" != 1 ]]; then
   echo
