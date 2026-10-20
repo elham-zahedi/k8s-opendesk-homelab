@@ -20,6 +20,7 @@
         name: iscsid
         enabled: true
         state: started
+      ignore_errors: "{{ ansible_check_mode }}"   # in check mode open-iscsi may not be installed yet
 
     - name: Load iscsi_tcp now
       community.general.modprobe:
@@ -60,9 +61,11 @@
       register: result
       changed_when: false
       check_mode: false
+      # in check mode nothing was installed or loaded, so a new node cannot pass yet
       failed_when: >-
-        'iscsid=active' not in result.stdout or 'multipathd=active' in result.stdout or
-        'iscsi_tcp=0' in result.stdout
+        not ansible_check_mode and
+        ('iscsid=active' not in result.stdout or 'multipathd=active' in result.stdout or
+        'iscsi_tcp=0' in result.stdout)
 
     - name: Show the result
       ansible.builtin.debug:
