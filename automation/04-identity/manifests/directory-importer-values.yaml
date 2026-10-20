@@ -1,0 +1,90 @@
+# Directory Importer: AD -> Nubus every 5 minutes (doc 04, section 7)
+sourceDirectory:
+  auth:
+    existingSecret:
+      name: "ad-bind-credentials"
+      keyMapping:
+        password: "password"
+udm:
+  auth:
+    existingSecret:
+      name: "udm-credentials"
+      keyMapping:
+        password: "password"
+config:
+  logLevel: "INFO"
+  repeat: true
+  repeatDelay: 300
+configFile:
+  udm:
+    uri: "@UDM_URL_IN_CLUSTER@"
+    user: "Administrator"
+    skip_writes: false
+    user_ou: "ou=@NUBUS_OU@"
+    group_ou: "ou=@NUBUS_OU@"
+    user_primary_key_property: "univentionObjectIdentifier"
+    group_primary_key_property: "univentionObjectIdentifier"
+    deletion_grace_period_days: 7
+  source:
+    ldap_uri: "ldaps://@AD_DC_FQDN@"
+    bind_dn: "@SVC_IMPORT_UPN@"
+    ca_cert: "/etc/ssl/ad/ca-certificates-ad.crt"
+    timeout: 5
+    search_pagesize: 500
+    user_base: "@AD_USER_BASE@"
+    user_scope: "sub"
+    # enabled user accounts with first and last name
+    user_filter: "(&(objectClass=user)(sAMAccountType=805306368)(givenName=*)(sn=*)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))"
+    user_attrs:
+      - "objectGUID"
+      - "sAMAccountName"
+      - "givenName"
+      - "sn"
+      - "mail"
+      - "description"
+    user_trans:
+      sanitizer:
+        objectGUID:
+          - univention.directory_importer.sanitize:guid2uuid
+        mail:
+          - univention.directory_importer.sanitize:mail_sanitizer
+          - bytes.lower
+      rename_attrs:
+        univentionObjectIdentifier: "objectGUID"
+        username: "sAMAccountName"
+        firstname: "givenName"
+        lastname: "sn"
+        "e-mail": "mail"
+      compose_attrs:
+        mailPrimaryAddress:
+          - "{e-mail}"
+          - "{username}@@AD_DOMAIN@"
+      remove_attrs:
+        - "objectGUID"
+    group_base: "@AD_GROUP_BASE@"
+    group_scope: "sub"
+    # only the global groups; the domain local groups (AGDLP) contain groups only
+    group_filter: "(&(objectClass=group)(cn=@AD_GROUP_PREFIX@*))"
+    group_attrs:
+      - "objectGUID"
+      - "cn"
+      - "description"
+      - "member"
+    group_trans:
+      sanitizer:
+        objectGUID:
+          - univention.directory_importer.sanitize:guid2uuid
+      rename_attrs:
+        univentionObjectIdentifier: "objectGUID"
+        name: "cn"
+        users: "member"
+      remove_attrs:
+        - "objectGUID"
+extraVolumes:
+  - name: "ad-ca"
+    secret:
+      secretName: "ad-root-ca"
+extraVolumeMounts:
+  - name: "ad-ca"
+    mountPath: "/etc/ssl/ad"
+    readOnly: true

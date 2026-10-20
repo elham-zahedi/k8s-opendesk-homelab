@@ -1,0 +1,25 @@
+# Certificate for the dedicated Keycloak, issued by the openDesk CA (doc 04, section 16)
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: idp-ca-issuer
+  namespace: idp
+spec:
+  ca:
+    secretName: opendesk-ca-copy
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: idp-tls
+  namespace: idp
+spec:
+  secretName: idp-tls
+  commonName: @IDP_FQDN@
+  dnsNames:
+    - @IDP_FQDN@
+  duration: 720h
+  renewBefore: 240h
+  issuerRef:
+    name: idp-ca-issuer
+    kind: Issuer
