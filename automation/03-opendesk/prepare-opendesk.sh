@@ -61,14 +61,14 @@ fi
 
 step "3/3 Master password $MASTER_PASSWORD_FILE"
 if [[ -s "$MASTER_PASSWORD_FILE" ]]; then
-  ok "exists ($(wc -c <"$MASTER_PASSWORD_FILE") characters) – never replaced"
+  ok "exists (not shown) – never replaced"
   check "file permissions 600" test "$(stat -c %a "$MASTER_PASSWORD_FILE")" = 600
 else
   info "\$ openssl rand -base64 32 | tr -d '\\n' > $MASTER_PASSWORD_FILE"
   if [[ "$DRY_RUN" != 1 ]]; then
     ( umask 077; openssl rand -base64 32 | tr -d '\n' > "$MASTER_PASSWORD_FILE" )
     chmod 600 "$MASTER_PASSWORD_FILE"
-    ok "created ($(wc -c <"$MASTER_PASSWORD_FILE") characters)"
+    ok "created (chmod 600, not shown)"
   fi
   warn "store the content in a password manager and in the backup – never in Git"
 fi

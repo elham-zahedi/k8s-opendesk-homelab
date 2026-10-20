@@ -20,7 +20,7 @@ ALLOWED_FLAGS="render diff"
 parse_common_args "$@"
 load_env
 require_vars OPENDESK_DIR OPENDESK_ENV OPENDESK_NAMESPACE MASTER_PASSWORD_FILE DOMAIN KUBECONFIG_PATH
-require_cmd helmfile helm
+require_cmd helmfile helm jq
 use_kubectl
 VALUES="$OPENDESK_DIR/helmfile/environments/$OPENDESK_ENV/values.yaml.gotmpl"
 [[ -f "$VALUES" ]] || die "$VALUES not found – run prepare-opendesk.sh first"
@@ -31,7 +31,7 @@ export MASTER_PASSWORD
 cd "$OPENDESK_DIR"
 SEL=(); [[ -n "${HELMFILE_SELECTOR:-}" ]] && SEL=(-l "$HELMFILE_SELECTOR")
 info "openDesk $(git describe --tags 2>/dev/null || echo '?'), environment $OPENDESK_ENV, namespace $OPENDESK_NAMESPACE"
-info "master password: ${#MASTER_PASSWORD} characters (from $MASTER_PASSWORD_FILE)"
+info "master password: read from $MASTER_PASSWORD_FILE (not shown)"
 [[ ${#SEL[@]} -eq 0 ]] || info "only releases matching: $HELMFILE_SELECTOR"
 
 if [[ "$FLAG_RENDER" == 1 ]]; then
@@ -78,7 +78,16 @@ if [[ -z "${TMUX:-}" && "$DRY_RUN" != 1 ]]; then
 fi
 confirm "Create an etcd backup and run helmfile apply ${HELMFILE_SELECTOR:+($HELMFILE_SELECTOR) }in namespace $OPENDESK_NAMESPACE now?" || die "aborted"
 
-run "$AUTOMATION_DIR/ops/etcd-backup.sh" "before-opendesk-$(date +%Y%m%d-%H%M)"
+STAMP="$(date +%Y%m%d-%H%M)"
+run "$AUTOMATION_DIR/ops/etcd-backup.sh" "before-opendesk-$STAMP"
+# state before the rollout: configuration (contains secrets -> 600) and release list
+REL_BEFORE="$HOME/helm-releases-before-$STAMP.txt"
+releases() { helm -n "$OPENDESK_NAMESPACE" list -a -o json 2>/dev/null | jq -r '.[] | "\(.name)\t\(.revision)\t\(.chart)\t\(.status)"' | sort; }
+echo "  \$ save $VALUES and the release list ($REL_BEFORE)"
+if [[ "$DRY_RUN" != 1 ]]; then
+  ( umask 077; cp "$VALUES" "$HOME/values-$OPENDESK_ENV.yaml.gotmpl.before-$STAMP" )
+  releases >"$REL_BEFORE"
+fi
 if ! kubectl get namespace "$OPENDESK_NAMESPACE" >/dev/null 2>&1; then
   run kubectl create namespace "$OPENDESK_NAMESPACE"
 fi
@@ -93,4 +102,11 @@ rc="${PIPESTATUS[0]}"
 set -e
 [[ "$rc" -eq 0 ]] || die "helmfile apply failed (exit code $rc) – see $LOG and doc 03, section 16"
 ok "helmfile apply finished – log: $LOG"
-info "Next: ./03-opendesk/verify-opendesk.sh"
+REL_AFTER="$HOME/helm-releases-after-$STAMP.txt"
+releases >"$REL_AFTER"
+info "releases before / after: $(wc -l <"$REL_BEFORE") / $(wc -l <"$REL_AFTER")"
+new_rel="$(join -v2 <(cut -f1 "$REL_BEFORE") <(cut -f1 "$REL_AFTER") | xargs)"
+[[ -z "$new_rel" ]] || info "new releases: $new_rel"
+bad_rel="$(awk -F'\t' '$4 != "deployed" {print $1 " (" $4 ")"}' "$REL_AFTER" | xargs)"
+[[ -z "$bad_rel" ]] || warn "not deployed: $bad_rel"
+info "Next (mandatory after every rollout): ./ops/post-rollout.sh – files_external is switched off by every rollout (doc 05, F3)"

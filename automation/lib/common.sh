@@ -348,3 +348,24 @@ kc() {
 
 # random_password LENGTH – letters and digits only
 random_password() { openssl rand -base64 48 | tr -d '/+=\n' | cut -c1-"$1"; }
+
+# ---- Groupware permission (doc 05, section 8)
+# groupware_state – compares the users with isOxUser = true in ou=NUBUS_OU with the
+# members of the group GROUPWARE_GROUP (needs udm_connect). DNs are compared without
+# case, the original spelling is kept. Sets GW_DN (empty if the group does not exist),
+# OX_USERS, GW_MEMBERS, GW_MISSING (counts), GW_ALL_MEMBERS and GW_MISSING_DNS (JSON arrays).
+groupware_state() {
+  local users
+  udm GET "users/user/?position=$(urlencode "ou=$NUBUS_OU,$NUBUS_BASE_DN")&scope=sub&properties=isOxUser"
+  [[ "$UDM_STATUS" == 200 ]] || die "reading the users failed (HTTP $UDM_STATUS)"
+  users="$(jq -c '[._embedded["udm:object"][] | select(.properties.isOxUser == true) | .dn]' "$UDM_BODY")"
+  udm GET "groups/group/?filter=$(urlencode "cn=$GROUPWARE_GROUP")&properties=users"
+  [[ "$UDM_STATUS" == 200 ]] || die "reading the group $GROUPWARE_GROUP failed (HTTP $UDM_STATUS)"
+  GW_DN="$(jq -r '._embedded["udm:object"][0].dn // empty' "$UDM_BODY")"
+  GW_ALL_MEMBERS="$(jq -c '._embedded["udm:object"][0].properties.users // []' "$UDM_BODY")"
+  GW_MISSING_DNS="$(jq -nc --argjson u "$users" --argjson m "$GW_ALL_MEMBERS" \
+    '($m | map(ascii_downcase)) as $have | $u | map(select(ascii_downcase | IN($have[]) | not))')"
+  OX_USERS="$(jq length <<<"$users")"
+  GW_MEMBERS="$(jq length <<<"$GW_ALL_MEMBERS")"
+  GW_MISSING="$(jq length <<<"$GW_MISSING_DNS")"
+}
