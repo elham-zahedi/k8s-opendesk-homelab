@@ -1,0 +1,74 @@
+# 03 – Node preparation for Longhorn and openDesk.
+# Doc: docs/03-opendesk-deployment.md (section 3)
+# Started by prepare-nodes-storage.sh; can also be run directly from ~/kubespray.
+
+- name: Prepare the nodes for Longhorn and openDesk
+  hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Packages for Longhorn (iSCSI, RWX volumes, encryption)
+      ansible.builtin.apt:
+        name: [open-iscsi, nfs-common, cryptsetup, dmsetup]
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: iscsid is enabled and running
+      ansible.builtin.systemd_service:
+        name: iscsid
+        enabled: true
+        state: started
+
+    - name: Load iscsi_tcp now
+      community.general.modprobe:
+        name: iscsi_tcp
+        state: present
+
+    - name: Load iscsi_tcp at every boot
+      ansible.builtin.copy:
+        dest: /etc/modules-load.d/iscsi_tcp.conf
+        content: "iscsi_tcp\n"
+        mode: "0644"
+
+    # multipathd would claim the Longhorn devices, so volumes could not be mounted
+    - name: Find multipathd units
+      ansible.builtin.service_facts:
+
+    - name: multipathd is stopped and disabled
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        enabled: false
+        state: stopped
+      loop: [multipathd.service, multipathd.socket]
+      when: "'multipathd.service' in ansible_facts.services"
+
+    # openDesk starts many containers that watch files
+    - name: inotify limits
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/98-inotify.conf
+        content: |
+          fs.inotify.max_user_instances = 8192
+          fs.inotify.max_user_watches = 524288
+        mode: "0644"
+      notify: Apply sysctl
+
+    - name: Check the result
+      ansible.builtin.shell: |
+        echo "iscsid=$(systemctl is-active iscsid) multipathd=$(systemctl is-active multipathd) iscsi_tcp=$(lsmod | grep -c '^iscsi_tcp') watches=$(sysctl -n fs.inotify.max_user_watches)"
+      register: result
+      changed_when: false
+      check_mode: false
+      failed_when: >-
+        'iscsid=active' not in result.stdout or 'multipathd=active' in result.stdout or
+        'iscsi_tcp=0' in result.stdout
+
+    - name: Show the result
+      ansible.builtin.debug:
+        msg: "{{ result.stdout }}"
+
+  handlers:
+    - name: Apply sysctl
+      ansible.builtin.command: sysctl --system
+      changed_when: true

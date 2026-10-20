@@ -1,0 +1,33 @@
+# openDesk configuration (doc 03, section 10.1)
+# Goes to <opendesk>/helmfile/environments/<env>/values.yaml.gotmpl – that path is
+# excluded by the .gitignore of the openDesk repository.
+# Section 04 (SSO) and 05 (OX App Suite) extend this file.
+global:
+  domain: "@DOMAIN@"
+cluster:
+  service:
+    type: "NodePort"
+  container:
+    engine: "containerd"
+ingress:
+  ingressClassName: "haproxy"
+persistence:
+  storageClassNames:
+    RWO: "longhorn"
+certificate:
+  issuerRef:
+    name: "selfsigned-issuer"
+  selfSigned: true
+apps:
+  openproject:
+    enabled: false
+  oxAppSuite:
+    enabled: false
+  xwiki:
+    enabled: false
+  element:
+    enabled: false
+  jitsi:
+    enabled: false
+  cryptpad:
+    enabled: false

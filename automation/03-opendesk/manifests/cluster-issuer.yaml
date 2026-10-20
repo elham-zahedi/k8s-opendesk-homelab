@@ -1,0 +1,7 @@
+# Self-signed issuer; openDesk creates its own CA from it (doc 03, section 7)
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-issuer
+spec:
+  selfSigned: {}
