@@ -369,3 +369,54 @@ groupware_state() {
   GW_MEMBERS="$(jq length <<<"$GW_ALL_MEMBERS")"
   GW_MISSING="$(jq length <<<"$GW_MISSING_DNS")"
 }
+
+# ---- Adding a worker (doc 06)
+# find_node NAME | name:vmid:ip:role – sets W_NAME, W_ID, W_IP, W_ROLE, W_ENTRY and
+# W_IN_NODES (1 if NAME is listed in NODES). A full entry is only needed for a test
+# with a node that is not in lab.env yet.
+find_node() {
+  local arg="${1:-}" entry
+  [[ -n "$arg" ]] || die "node missing – usage: $(basename "$0") NAME   (see --help)"
+  W_IN_NODES=0; W_ENTRY=""
+  for entry in $NODES; do
+    if [[ "${entry%%:*}" == "${arg%%:*}" ]]; then
+      W_IN_NODES=1
+      [[ "$arg" == *:* && "$arg" != "$entry" ]] && die "$arg differs from the entry $entry in NODES"
+      W_ENTRY="$entry"
+    fi
+  done
+  [[ "$arg" == *:* ]] && W_ENTRY="$arg"
+  [[ -n "$W_ENTRY" ]] || die "$arg is not listed in NODES (lab.env) – add a line like $arg:208:10.240.0.28:worker"
+  IFS=: read -r W_NAME W_ID W_IP W_ROLE <<<"$W_ENTRY"
+  [[ "$W_NAME" =~ ^[a-z0-9-]+$ && "$W_ID" =~ ^[0-9]+$ && "$W_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+    || die "invalid node entry '$W_ENTRY' – expected name:vmid:ip:role"
+  [[ "$W_ROLE" == worker ]] || die "$W_NAME has the role '$W_ROLE' – these scripts only add workers; control plane and etcd nodes need cluster.yml (doc 06, section 8)"
+}
+
+# control_plane_node – sets CP_NAME and CP_IP to the first control plane node in NODES
+control_plane_node() {
+  local entry name id ip role
+  CP_NAME=""; CP_IP=""
+  for entry in $NODES; do
+    IFS=: read -r name id ip role <<<"$entry"
+    if [[ "$role" != worker ]]; then CP_NAME="$name"; CP_IP="$ip"; return 0; fi
+  done
+  die "no control plane node in NODES"
+}
+
+# run_playbook LOG PLAYBOOK [ansible-playbook args...] – runs a playbook from the
+# Kubespray directory (use_kubespray first), writes the full output to LOG, prints
+# the result lines and the PLAY RECAP, and stops if a host failed.
+run_playbook() {
+  local log="$1" pb="$2" rc; shift 2
+  echo "  \$ ansible-playbook -i $INV_RUN $(basename "$pb") $*   (log: $log)"
+  set +e
+  ansible-playbook -i "$INV_RUN" "$pb" "$@" >"$log" 2>&1
+  rc=$?
+  set -e
+  grep -E '"msg"|ok=[0-9]+ +changed=' "$log" | indent '    ' || true
+  if [[ "$rc" -ne 0 ]] || grep -qE 'unreachable=[1-9]|failed=[1-9]' "$log"; then
+    grep -n -A3 'fatal:' "$log" | grep -v '\.\.\.ignoring' | tail -n 20 | indent '    ' || true
+    die "$(basename "$pb") failed (exit code $rc) – see $log"
+  fi
+}

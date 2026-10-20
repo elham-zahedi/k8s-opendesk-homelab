@@ -47,5 +47,6 @@ for i in "${!NODE_NAMES[@]}"; do
 done
 
 echo
+if [[ "$DRY_RUN" == 1 ]]; then info "(dry run) nothing was cloned"; exit 0; fi
 ok "${#NODE_NAMES[@]} VM(s) cloned and started."
-info "The first boot installs updates. Next, on the kubespray VM: ./02-kubespray/check-nodes.sh --reboot"
+info "The first boot installs updates. Next, on the kubespray VM: ${CLONE_NEXT:-./02-kubespray/check-nodes.sh --reboot}"

@@ -44,7 +44,7 @@
       register: result
       changed_when: false
       check_mode: false
-      failed_when: "'nls_utf8=0' in result.stdout"
+      failed_when: "'nls_utf8=0' in result.stdout and not ansible_check_mode"   # check mode loads nothing
 
     - name: Result
       ansible.builtin.debug:

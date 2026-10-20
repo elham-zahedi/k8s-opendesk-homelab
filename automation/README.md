@@ -24,6 +24,7 @@ cp lab.env.example lab.env        # adjust names, IP addresses and versions
 | 03 | [`03-opendesk`](03-opendesk/) | kubespray VM (k8s) | `install-tools.sh`, `configure-cluster-dns.sh`, `fix-strictarp.sh`, `verify-dns.sh`, `prepare-nodes-storage.sh`, `install-platform.sh`, `split-dns.sh`, `smoke-test.sh`, `prepare-opendesk.sh`, `deploy-opendesk.sh`, `verify-opendesk.sh`, `export-ca.sh` | [03 – openDesk deployment](../docs/03-opendesk-deployment.md) | ✔ Tested 20.10.2026 on the running lab² |
 | 04 | [`04-identity`](04-identity/) | kubespray VM (k8s), DC and FS (PowerShell) | `check-prerequisites.sh`, `fetch-ad-files.sh`, `setup-directory-importer.sh`, `verify-directory-importer.sh`, `setup-smb-storage.sh`, `patch-nextcloud-volumes.sh`, `enable-fileshare-groups.sh`, `nc-mounts.sh`, `verify-nextcloud-files.sh`, `setup-keycloak-idp.sh`, `configure-keycloak-realm.sh`, `configure-sso.sh`, `verify-sso.sh` | [04 – Active Directory and SSO](../docs/04-active-directory-sso.md) | ✔ Tested 20.10.2026 on the running lab³ |
 | 05 | [`05-ox`](05-ox/) | kubespray VM (k8s) | `enable-ox.sh`, `verify-ox.sh` | [05 – OX App Suite](../docs/05-ox-app-suite.md) | ✔ Tested 20.10.2026 on the running lab⁴ |
+| 06 | [`06-add-worker`](06-add-worker/) | kubespray VM (k8s), Proxmox host (root) | `precheck-worker.sh`, `create-worker-vm.sh`, `add-worker.sh`, `verify-worker.sh` | [06 – Adding a worker node](../docs/06-add-worker-node.md) | ✔ Tested 20.10.2026 on the running lab⁵ |
 | – | [`ops`](ops/) | kubespray VM (k8s) | `etcd-backup.sh`, `post-rollout.sh` | 03, 05, 06, 12 | ✔ Tested 20.10.2026⁴ |
 | – | [`windows`](windows/) | DC, file server, workstation | `ad-inventory.ps1`, `test-service-accounts.ps1`, `set-test-passwords.ps1`, `fs-inventory.ps1`, `import-ca.ps1` | [03](../docs/03-opendesk-deployment.md), [04](../docs/04-active-directory-sso.md) | Not tested yet |
 
@@ -35,7 +36,9 @@ cp lab.env.example lab.env        # adjust names, IP addresses and versions
 
 ⁴ Run against the live lab, where OX App Suite was already active: `enable-ox --dry-run` (pre-check 4/4, "already enabled"), `post-rollout --dry-run` (files_external enabled, no user missing in the groupware group), `configure-keycloak-realm --dry-run` (post-logout URI present), `verify-ox` (20/20) and `verify-sso` (11/11, now including the post-logout URI). The rollout itself and the repair steps of `post-rollout` were not run, because nothing needed to be changed.
 
-The remaining sections (adding a worker, daily checks) are being added one by one.
+⁵ Run against the live lab: `precheck-worker` for a node that does not exist yet (8/8), `add-worker --dry-run` for the existing worker node6 (node preparation in Ansible check mode: `changed=0` on all 7 nodes, fact cache checked, `scale.yml` only printed) and `verify-worker` for node6 (26/26, including a Longhorn volume and DNS in a pod on node6). `create-worker-vm` was only tested against a simulated `qm`, and `add-worker` without `--dry-run` against a simulated cluster, because a real run would create a new VM and join it to the cluster.
+
+The daily checks are being added next.
 
 ## Conventions
 

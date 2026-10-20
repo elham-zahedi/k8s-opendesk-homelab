@@ -48,8 +48,11 @@
       check_mode: false
       failed_when: swap.stdout | length > 0
 
+    # In check mode the hosts block is not written, so a new node cannot be resolved yet
     - name: Check that every node resolves every other node
       ansible.builtin.command: "getent hosts {{ item }}"
       loop: "{{ node_order }}"
+      register: resolve
       changed_when: false
       check_mode: false
+      failed_when: resolve.rc != 0 and not ansible_check_mode
