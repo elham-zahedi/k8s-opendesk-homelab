@@ -51,6 +51,8 @@ else check "$users users from AD" test "$users" -gt 0; fi
 kc GET "/$IDP_REALM/clients?clientId=$IDP_CLIENT"
 check "client $IDP_CLIENT with redirect URI $IDP_REDIRECT_URI" \
   jq -e --arg u "$IDP_REDIRECT_URI" '.[0].redirectUris | index($u) != null' "$KC_BODY"
+check "client $IDP_CLIENT with post-logout URI …/logout_response (doc 05, error F5)" \
+  jq -e --arg u "$IDP_REDIRECT_URI/logout_response" '.[0].attributes["post.logout.redirect.uris"] // "" | split("##") | index($u) != null' "$KC_BODY"
 CID="$(jq -r '.[0].id // empty' "$KC_BODY")"
 kc GET "/$IDP_REALM/clients/$CID/client-secret"; ks="$(jq -r '.value // ""' "$KC_BODY" | tr -d '\n' | sha)"; : >"$KC_BODY"
 VALUES="$OPENDESK_DIR/helmfile/environments/$OPENDESK_ENV/values.yaml.gotmpl"

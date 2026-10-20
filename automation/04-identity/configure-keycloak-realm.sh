@@ -131,7 +131,9 @@ if [[ -n "$LDAP_ID" ]]; then
 fi
 
 # ------------------------------------------------------------------------------
-step "3/4 Client $IDP_CLIENT (redirect URI of openDesk)"
+step "3/4 Client $IDP_CLIENT (redirect URIs of openDesk)"
+# post-logout URI: without it the logout ends with "Invalid redirect uri" (doc 05, error F5)
+POST_LOGOUT_URI="$IDP_REDIRECT_URI/logout_response"
 WANTED_CLIENT="$(jq -n --arg id "$IDP_CLIENT" --arg uri "$IDP_REDIRECT_URI" --arg origin "https://$OPENDESK_ID_FQDN" '{
   clientId: $id, protocol: "openid-connect", publicClient: false, standardFlowEnabled: true,
   directAccessGrantsEnabled: false, implicitFlowEnabled: false, serviceAccountsEnabled: false,
@@ -144,13 +146,19 @@ fi
 if [[ -n "$CID" ]]; then
   current="$(jq -c '.[0]' "$KC_BODY")"
   bad="$(jq -r --argjson w "$WANTED_CLIENT" '. as $c | $w | keys | map(select($c[.] != $w[.])) | join(" ")' <<<"$current")"
-  if [[ -z "$bad" ]]; then ok "client $IDP_CLIENT exists, redirect URI $IDP_REDIRECT_URI"
+  got_pl="$(jq -r '.attributes["post.logout.redirect.uris"] // ""' <<<"$current")"
+  [[ "$got_pl" == "$POST_LOGOUT_URI" ]] || bad+="${bad:+ }post.logout.redirect.uris"
+  if [[ -z "$bad" ]]; then ok "client $IDP_CLIENT exists, redirect URI $IDP_REDIRECT_URI and post-logout URI"
   else
-    for k in $bad; do warn "$k: $(jq -c --arg k "$k" '.[$k]' <<<"$current") (expected $(jq -c --arg k "$k" '.[$k]' <<<"$WANTED_CLIENT"))"; done
+    for k in $bad; do
+      if [[ "$k" == post.logout.redirect.uris ]]; then warn "$k: '${got_pl}' (expected '$POST_LOGOUT_URI')"
+      else warn "$k: $(jq -c --arg k "$k" '.[$k]' <<<"$current") (expected $(jq -c --arg k "$k" '.[$k]' <<<"$WANTED_CLIENT"))"; fi
+    done
     if [[ "$FLAG_FORCE" == 1 ]]; then
-      info "\$ correct client $IDP_CLIENT (error F15)"
+      info "\$ correct client $IDP_CLIENT (doc 04 error F15, doc 05 error F5)"
       if [[ "$DRY_RUN" != 1 ]]; then
-        jq --argjson w "$WANTED_CLIENT" '. + $w' <<<"$current" >"$KC_BODY.put"
+        jq --argjson w "$WANTED_CLIENT" --arg pl "$POST_LOGOUT_URI" '. + $w | .attributes["post.logout.redirect.uris"] = $pl' \
+          <<<"$current" >"$KC_BODY.put"
         kc PUT "/$R/clients/$CID" "@$KC_BODY.put"; rm -f "$KC_BODY.put"
         check "client corrected (HTTP $KC_STATUS)" test "$KC_STATUS" = 204
       fi
@@ -159,7 +167,7 @@ if [[ -n "$CID" ]]; then
 else
   info "\$ create client $IDP_CLIENT"
   if [[ "$DRY_RUN" != 1 ]]; then
-    kc POST "/$R/clients" "$WANTED_CLIENT"
+    kc POST "/$R/clients" "$(jq --arg pl "$POST_LOGOUT_URI" '. + {attributes: {"post.logout.redirect.uris": $pl}}' <<<"$WANTED_CLIENT")"
     [[ "$KC_STATUS" == 201 ]] || die "creating the client failed (HTTP $KC_STATUS)"
     ok "client created – the secret is written into the openDesk configuration by configure-sso.sh"
   fi

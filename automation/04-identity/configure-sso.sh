@@ -39,7 +39,7 @@ CID="$(jq -r '.[0].id // empty' "$KC_BODY" 2>/dev/null || true)"
 kc GET "/$IDP_REALM/clients/$CID/client-secret"
 CS="$(jq -r '.value // empty' "$KC_BODY")"; : >"$KC_BODY"
 [[ -n "$CS" ]] || die "could not read the client secret"
-ok "read from Keycloak (${#CS} characters, not shown)"
+ok "read from Keycloak (not shown)"
 
 step "2/3 ssoFederation in $(basename "$VALUES")"
 norm='del(.functional.authentication.ssoFederation.idps[].idpDetails.config.clientSecret) | .functional.authentication.ssoFederation | sort_keys(..)'

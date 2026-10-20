@@ -21,7 +21,7 @@ All names (domain, DC, OUs, service accounts, shares, realm) are in section "04"
 | 10 | `nc-mounts.sh [--apply]` | Creates the 27 mounts of [`manifests/nc-mounts.csv`](manifests/nc-mounts.csv); plan only without `--apply` | With `--apply` |
 | 11 | `verify-nextcloud-files.sh` | `nls_utf8` on all nodes, write test in every data directory, every mount compared with the list | No (test files) |
 | 12 | `setup-keycloak-idp.sh` | Passwords, PostgreSQL, CA copy, certificate, Keycloak release; renews the CA copy when the openDesk CA was renewed | Only what is missing |
-| 13 | `configure-keycloak-realm.sh` | Realm, LDAP provider to AD, username mapper, OIDC client – via the admin REST API | Only what is missing; `--force` corrects |
+| 13 | `configure-keycloak-realm.sh` | Realm, LDAP provider to AD, username mapper, OIDC client with redirect and post-logout URI – via the admin REST API | Only what is missing; `--force` corrects |
 | 14 | `configure-sso.sh` | Adds the `ssoFederation` block with the client secret to the openDesk configuration | Only if missing |
 | 15 | `HELMFILE_SELECTOR=name=opendesk-keycloak-bootstrap ../03-opendesk/deploy-opendesk.sh` | Creates the identity provider in openDesk | Yes |
 | 16 | `verify-sso.sh` | Keycloak, issuer from outside and from a pod, certificates, users in the realm, client, secret, identity provider in openDesk | No (test pod) |
@@ -40,7 +40,8 @@ Passwords of the AD service accounts are asked for (hidden input) only when the 
 | Kernel update (before rebooting the nodes) | `setup-smb-storage.sh` – installs `linux-modules-extra` also for the newest installed kernel |
 | Nubus administrator password changed | `setup-directory-importer.sh --force` |
 | openDesk CA renewed by cert-manager | `setup-keycloak-idp.sh`, then `../03-opendesk/export-ca.sh` and `../windows/import-ca.ps1` |
-| openDesk update | `patch-nextcloud-volumes.sh`, `nc-mounts.sh` (only `SKIP`), `verify-nextcloud-files.sh`, `verify-sso.sh` |
+| Every rollout (`helmfile apply`) | `../ops/post-rollout.sh` – enables `files_external` again and runs the checks |
+| openDesk update | `patch-nextcloud-volumes.sh`, `nc-mounts.sh` (only `SKIP`), then `../ops/post-rollout.sh` |
 
 ## Testing on a running lab
 
