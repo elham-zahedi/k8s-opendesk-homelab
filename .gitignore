@@ -1,0 +1,7 @@
+# Local settings and secrets never go into the repository
+lab.env
+*.secret
+*.key
+*.pem
+kubeconfig*
+admin.conf
