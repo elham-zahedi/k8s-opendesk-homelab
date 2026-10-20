@@ -1,0 +1,35 @@
+# "Login with AD account" in openDesk (doc 04, section 19.3). configure-sso.sh merges
+# this block into the openDesk values file; the client secret is added from Keycloak
+# by the script and never stored in the repository.
+functional:
+  authentication:
+    ssoFederation:
+      enabled: true
+      enforceFederatedLogin: ""
+      idps:
+        @IDP_KEY@:
+          name: "@IDP_DISPLAY_NAME@"
+          idpDetails:
+            providerId: "oidc"
+            enabled: true
+            updateProfileFirstLoginMode: "off"
+            trustEmail: true
+            storeToken: false
+            addReadTokenRoleOnCreate: false
+            authenticateByDefault: false
+            linkOnly: false
+            config:
+              issuer: "@IDP_URL@/realms/@IDP_REALM@"
+              authorizationUrl: "@IDP_URL@/realms/@IDP_REALM@/protocol/openid-connect/auth"
+              tokenUrl: "@IDP_URL@/realms/@IDP_REALM@/protocol/openid-connect/token"
+              userInfoUrl: "@IDP_URL@/realms/@IDP_REALM@/protocol/openid-connect/userinfo"
+              jwksUrl: "@IDP_URL@/realms/@IDP_REALM@/protocol/openid-connect/certs"
+              logoutUrl: "@IDP_URL@/realms/@IDP_REALM@/protocol/openid-connect/logout"
+              useJwksUrl: "true"
+              validateSignature: "true"
+              clientId: "@IDP_CLIENT@"
+              clientSecret: ""
+              clientAuthMethod: "client_secret_post"
+              pkceEnabled: "false"
+              syncMode: "LEGACY"
+              defaultScope: "openid profile email"

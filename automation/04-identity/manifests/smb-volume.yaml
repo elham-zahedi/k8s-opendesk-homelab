@@ -1,0 +1,40 @@
+# One SMB share of the file server as PersistentVolume + PVC for Nextcloud (doc 04, section 11)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-fs-@NAME@
+spec:
+  capacity:
+    storage: 100Gi
+  accessModes: ["ReadWriteMany"]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - dir_mode=0770
+    - file_mode=0770
+    - uid=@NC_UID@
+    - gid=@NC_UID@
+    - noserverino
+    - vers=3.1.1
+    - iocharset=utf8          # needs the kernel module nls_utf8 (prepare-nodes-smb.yml)
+  csi:
+    driver: smb.csi.k8s.io
+    volumeHandle: fs-@NAME@
+    volumeAttributes:
+      source: //@FS_IP@/@SHARE@
+    nodeStageSecretRef:
+      name: smb-fs-creds
+      namespace: @OPENDESK_NAMESPACE@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-fs-@NAME@
+  namespace: @OPENDESK_NAMESPACE@
+spec:
+  accessModes: ["ReadWriteMany"]
+  storageClassName: ""
+  volumeName: pv-fs-@NAME@
+  resources:
+    requests:
+      storage: 100Gi

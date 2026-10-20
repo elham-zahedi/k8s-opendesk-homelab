@@ -191,3 +191,160 @@ set_yaml_var() {
     append_line "$file" "${key}: ${value}"
   fi
 }
+
+# identity_vars – names derived from lab.env for section 04
+identity_vars() {
+  AD_BASE_DN="DC=${AD_DOMAIN//./,DC=}"            # lab.local -> DC=lab,DC=local
+  AD_DC_FQDN="$AD_DC_HOST.$AD_DOMAIN"
+  FS_FQDN="$FS_HOST.$AD_DOMAIN"
+  AD_USER_BASE="$AD_USER_OU,$AD_BASE_DN"
+  AD_GROUP_BASE="$AD_GROUP_OU,$AD_BASE_DN"
+  IDP_FQDN="$IDP_HOST.$DOMAIN"
+  IDP_URL="https://$IDP_FQDN/auth"
+  OPENDESK_ID_FQDN="id.$DOMAIN"                    # Keycloak of openDesk
+  IDP_ALIAS="sso-federation-idp-$IDP_KEY"
+  IDP_REDIRECT_URI="https://$OPENDESK_ID_FQDN/realms/opendesk/broker/$IDP_ALIAS/endpoint"
+  UDM_URL_IN_CLUSTER="http://ums-udm-rest-api.$OPENDESK_NAMESPACE.svc.cluster.local:9979/univention/udm/"
+}
+
+# secret_exists NAMESPACE NAME
+secret_exists() { kubectl -n "$1" get secret "$2" >/dev/null 2>&1; }
+
+# add_exit_hook "COMMAND" – runs COMMAND when the script ends (several hooks possible)
+EXIT_HOOKS=()
+run_exit_hooks() { local h; for h in "${EXIT_HOOKS[@]}"; do eval "$h" >/dev/null 2>&1 || true; done; }
+add_exit_hook() { EXIT_HOOKS+=("$1"); trap run_exit_hooks EXIT; }
+
+# port_forward NAMESPACE SERVICE LOCAL:REMOTE – starts kubectl port-forward in the
+# background and waits until it answers; stopped automatically when the script ends
+port_forward() {
+  local ns="$1" svc="$2" ports="$3" local_port="${3%%:*}" i
+  kubectl -n "$ns" port-forward "svc/$svc" "$ports" >/dev/null 2>&1 &
+  add_exit_hook "kill $!"
+  for i in $(seq 30); do
+    (exec 3<>"/dev/tcp/127.0.0.1/$local_port") 2>/dev/null && return 0
+    sleep 0.5
+  done
+  die "port-forward to $ns/$svc did not start"
+}
+
+# helm_install_once NAMESPACE RELEASE CHART VERSION TIMEOUT [helm args...]
+# Installs a release that does not exist yet. An existing release is left unchanged
+# (upgrades are a manual decision) and only reported if its version differs.
+helm_install_once() {
+  local ns="$1" rel="$2" chart="$3" ver="$4" timeout="$5"; shift 5
+  local current; current="$(helm_chart_version "$ns" "$rel")"
+  if [[ -z "$current" ]]; then
+    # --timeout is mandatory: with the default of 5 minutes helm marks slow releases as failed
+    run helm upgrade --install "$rel" "$chart" --namespace "$ns" --create-namespace \
+      --version "$ver" --timeout "$timeout" --wait "$@"
+  elif [[ "$current" == "$ver deployed" ]]; then
+    ok "$rel $ver is already installed (deployed) – left unchanged"
+  else
+    warn "$rel is installed as '$current', expected '$ver deployed' – left unchanged"
+  fi
+}
+
+# yaml_same A B – true if two YAML files have the same content (comments, order and quoting ignored)
+yaml_same() { diff -q <(yq -o=json 'sort_keys(..)' "$1") <(yq -o=json 'sort_keys(..)' "$2") >/dev/null 2>&1; }
+
+# helm_values_match NAMESPACE RELEASE FILE – compares the values of a release with FILE
+helm_values_match() {
+  local tmp; tmp="$(mktemp)"
+  helm -n "$1" get values "$2" -o yaml >"$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
+  if yaml_same "$tmp" "$3"; then rm -f "$tmp"; return 0; fi
+  diff <(yq -P 'sort_keys(..)' "$tmp") <(yq -P '(... comments = "") | sort_keys(..)' "$3") | indent '    ' || true
+  rm -f "$tmp"; return 1
+}
+
+# apply_manifest FILE – creates the resources in FILE. Existing resources that differ
+# are only changed with --force (the difference is shown first).
+apply_manifest() {
+  local f="$1" rc=0 tmp; tmp="$(mktemp)"
+  kubectl diff -f "$f" >"$tmp" 2>&1 || rc=$?
+  if [[ "$rc" -eq 0 ]]; then ok "$(basename "$f"): already applied, no difference"; rm -f "$tmp"; return 0; fi
+  if [[ "$rc" -eq 1 ]] && kubectl get -f "$f" >/dev/null 2>&1; then
+    indent '    ' <"$tmp"; rm -f "$tmp"
+    [[ "${FLAG_FORCE:-0}" == 1 ]] || die "$(basename "$f") differs from the cluster (see above) – check lab.env, or apply it with --force"
+  fi
+  rm -f "$tmp"
+  run kubectl apply -f "$f"
+}
+
+# urlencode STRING
+urlencode() { python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1"; }
+
+# secret_value NAMESPACE NAME KEY – prints one value of a secret (never echo it to the terminal)
+secret_value() { kubectl -n "$1" get secret "$2" -o json | jq -r --arg k "$3" '.data[$k] // empty' | base64 -d; }
+
+# put_secret NAMESPACE NAME KEY [more --from-literal args] – creates or replaces a secret;
+# the value of KEY is read from stdin, so it never shows up in the process list
+put_secret() {
+  local ns="$1" name="$2" key="$3"; shift 3
+  echo "  \$ kubectl -n $ns create secret generic $name --from-file=$key=<hidden> $*"
+  if [[ "$DRY_RUN" == 1 ]]; then cat >/dev/null; return 0; fi
+  kubectl -n "$ns" create secret generic "$name" --from-file="$key=/dev/stdin" "$@" \
+    --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+}
+
+# ---- Nubus UDM REST API (through kubectl port-forward, password via curl config on a pipe)
+UDM_BODY=""; UDM_STATUS=""
+udm_connect() {
+  UDM_BODY="$(mktemp)"
+  UDM_PW="$(secret_value "$OPENDESK_NAMESPACE" ums-nubus-credentials administrator_password)"
+  [[ -n "$UDM_PW" ]] || die "Nubus administrator password not found (secret ums-nubus-credentials)"
+  port_forward "$OPENDESK_NAMESPACE" ums-udm-rest-api 19979:9979
+  add_exit_hook "rm -f $UDM_BODY"
+}
+# udm METHOD PATH [JSON] – body in $UDM_BODY, HTTP status in $UDM_STATUS
+udm() {
+  local method="$1" path="$2" data=() pw="${UDM_PW//\\/\\\\}"
+  pw="${pw//\"/\\\"}"
+  [[ -n "${3:-}" ]] && data=(--data "$3")
+  UDM_STATUS="$(curl -sS -o "$UDM_BODY" -w '%{http_code}' -X "$method" \
+    -K <(printf 'user = "Administrator:%s"\n' "$pw") \
+    -H 'Accept: application/json' -H 'Content-Type: application/json' "${data[@]}" \
+    "http://127.0.0.1:19979/univention/udm/$path")" || UDM_STATUS=000
+}
+# udm_count PATH – number of objects in a search result
+udm_count() { udm GET "$1"; jq '._embedded["udm:object"] | length' "$UDM_BODY" 2>/dev/null || echo 0; }
+
+# ---- Nextcloud
+# nextcloud_pod – sets NCPOD to the running Nextcloud (aio) pod
+nextcloud_pod() {
+  NCPOD="$(kubectl -n "$OPENDESK_NAMESPACE" get pod -l app.kubernetes.io/name=aio \
+    --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+  [[ -n "$NCPOD" ]] || die "no running Nextcloud pod (label app.kubernetes.io/name=aio) in $OPENDESK_NAMESPACE"
+}
+# occ ARGS... – Nextcloud command line in the pod
+occ() { kubectl -n "$OPENDESK_NAMESPACE" exec "$NCPOD" -- php /var/www/html/occ "$@" </dev/null; }
+# csv_rows FILE – the data lines of a ;-separated file, without header and CR
+csv_rows() { tail -n +2 "$1" | tr -d '\r' | grep -v '^\s*$'; }
+
+# ---- Admin REST API of the dedicated Keycloak (doc 04, section 19.4)
+# The password is passed to curl on stdin and the token in a header file, so neither
+# shows up in the process list. A new token is fetched for every call (lifetime 60 s).
+KC_BODY=""; KC_STATUS=""
+kc_connect() {
+  [[ -s "$KEYCLOAK_ADMIN_PASSWORD_FILE" ]] || die "$KEYCLOAK_ADMIN_PASSWORD_FILE not found"
+  [[ -s "$OPENDESK_CA_FILE" ]] || die "$OPENDESK_CA_FILE not found – run 03-opendesk/export-ca.sh"
+  KC_BODY="$(mktemp)"; add_exit_hook "rm -f $KC_BODY"
+}
+kc_token() {
+  printf '%s' "$(<"$KEYCLOAK_ADMIN_PASSWORD_FILE")" | curl -sS --cacert "$OPENDESK_CA_FILE" \
+    -d client_id=admin-cli -d "username=${KEYCLOAK_ADMIN_USER:-admin}" --data-urlencode "password@-" \
+    -d grant_type=password "$IDP_URL/realms/master/protocol/openid-connect/token" | jq -r '.access_token // empty'
+}
+# kc METHOD PATH [JSON | @-] – PATH below /admin/realms; body in $KC_BODY, status in $KC_STATUS
+kc() {
+  local method="$1" path="$2" data=() token
+  token="$(kc_token)"
+  [[ -n "$token" ]] || die "no admin token from $IDP_URL (user ${KEYCLOAK_ADMIN_USER:-admin}, password file $KEYCLOAK_ADMIN_PASSWORD_FILE)"
+  [[ -n "${3:-}" ]] && data=(--data-binary "$3")
+  KC_STATUS="$(curl -sS --cacert "$OPENDESK_CA_FILE" -o "$KC_BODY" -w '%{http_code}' -X "$method" \
+    -H @<(printf 'Authorization: Bearer %s\n' "$token") -H 'Content-Type: application/json' \
+    "${data[@]}" "$IDP_URL/admin/realms$path")" || KC_STATUS=000
+}
+
+# random_password LENGTH – letters and digits only
+random_password() { openssl rand -base64 48 | tr -d '/+=\n' | cut -c1-"$1"; }

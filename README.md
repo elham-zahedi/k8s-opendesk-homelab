@@ -86,7 +86,7 @@ Each runbook follows the same structure: **symptom → step-by-step diagnosis �
 
 ## Automation
 
-The [`automation/`](automation/) folder contains Bash scripts that rebuild the lab step by step – one folder per document, with a central settings file, `--dry-run` for every script and read-only `verify-*.sh` checks. Sections 01 (Proxmox template), 02 (Kubespray cluster) and 03 (platform services and openDesk) are tested in the lab; the remaining sections are being added one by one.
+The [`automation/`](automation/) folder contains Bash scripts that rebuild the lab step by step – one folder per document, with a central settings file, `--dry-run` for every script and read-only `verify-*.sh` checks. Sections 01 – 04 (Proxmox template, Kubespray cluster, platform services and openDesk, Active Directory and SSO) are tested in the lab; the remaining sections are being added one by one.
 
 ## Lessons learned
 

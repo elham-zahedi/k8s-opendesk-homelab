@@ -1,0 +1,62 @@
+# Dedicated Keycloak (chart codecentric/keycloakx) for "Login with AD account" (doc 04, section 17)
+command:
+  - "/opt/keycloak/bin/kc.sh"
+  - "start"
+  - "--http-enabled=true"
+  - "--http-port=8080"
+  - "--hostname=@IDP_URL@"
+  - "--hostname-strict=false"
+database:
+  vendor: postgres
+  hostname: keycloak-postgres.idp.svc.cluster.local
+  port: 5432
+  database: keycloak
+  username: keycloak
+  existingSecret: keycloak-db
+  existingSecretKey: password
+dbchecker:
+  enabled: true
+extraEnv: |
+  - name: KC_BOOTSTRAP_ADMIN_USERNAME
+    valueFrom:
+      secretKeyRef:
+        name: keycloak-admin
+        key: username
+  - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: keycloak-admin
+        key: password
+  - name: KC_TRUSTSTORE_PATHS
+    value: /opt/keycloak/conf/truststores
+extraVolumes: |
+  - name: ad-ca
+    secret:
+      secretName: ad-root-ca
+extraVolumeMounts: |
+  - name: ad-ca
+    mountPath: /opt/keycloak/conf/truststores
+    readOnly: true
+ingress:
+  enabled: true
+  ingressClassName: haproxy
+  rules:
+    - host: @IDP_FQDN@
+      paths:
+        - path: /auth/
+          pathType: Prefix
+  tls:
+    - hosts:
+        - @IDP_FQDN@
+      secretName: idp-tls
+resources:
+  requests:
+    cpu: "200m"
+    memory: "1Gi"
+  limits:
+    memory: "2Gi"
+proxy:
+  enabled: true
+  mode: xforwarded
+  http:
+    enabled: true

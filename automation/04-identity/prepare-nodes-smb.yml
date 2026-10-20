@@ -1,0 +1,51 @@
+# 04 – Kernel module nls_utf8 on all nodes (needed for the SMB mount option iocharset=utf8).
+# Doc: docs/04-active-directory-sso.md (section 10, error F7)
+#
+# The Ubuntu cloud image has no linux-modules-extra. The package exists per kernel
+# version, so it is installed for the running kernel AND for the newest installed
+# kernel – after the next reboot nls_utf8 is then already there.
+# Started by setup-smb-storage.sh; run it again after every kernel update.
+
+- name: nls_utf8 for SMB mounts
+  hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Running and newest installed kernel
+      ansible.builtin.shell: |
+        uname -r
+        dpkg-query -W -f='${db:Status-Abbrev}${Package}\n' 'linux-image-[0-9]*' 2>/dev/null \
+          | awk '/^ii/ {sub(/^ii */, ""); sub(/^linux-image-/, ""); print}' | sort -V | tail -1
+      register: kernels
+      changed_when: false
+      check_mode: false
+
+    - name: linux-modules-extra for these kernels
+      ansible.builtin.apt:
+        name: "{{ kernels.stdout_lines | unique | map('regex_replace', '^', 'linux-modules-extra-') | list }}"
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Load nls_utf8 now
+      community.general.modprobe:
+        name: nls_utf8
+        state: present
+
+    - name: Load nls_utf8 at every boot
+      ansible.builtin.copy:
+        dest: /etc/modules-load.d/nls_utf8.conf
+        content: "nls_utf8\n"
+        mode: "0644"
+
+    - name: Check
+      ansible.builtin.shell: echo "$(uname -r) nls_utf8=$(lsmod | grep -c '^nls_utf8')"
+      register: result
+      changed_when: false
+      check_mode: false
+      failed_when: "'nls_utf8=0' in result.stdout"
+
+    - name: Result
+      ansible.builtin.debug:
+        msg: "{{ result.stdout }} – kernels with modules-extra: {{ kernels.stdout_lines | unique | join(', ') }}"

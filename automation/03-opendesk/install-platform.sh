@@ -24,36 +24,8 @@ use_kubectl
 M="$AUTOMATION_DIR/03-opendesk/manifests"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 
-# install_chart NAMESPACE RELEASE CHART VERSION TIMEOUT [helm args...]
-install_chart() {
-  local ns="$1" rel="$2" chart="$3" ver="$4" timeout="$5"; shift 5
-  local current; current="$(helm_chart_version "$ns" "$rel")"
-  if [[ -z "$current" ]]; then
-    # --timeout is mandatory: with the default of 5 minutes helm marks slow releases as failed
-    run helm install "$rel" "$chart" --namespace "$ns" --create-namespace \
-      --version "$ver" --timeout "$timeout" --wait "$@"
-  elif [[ "$current" == "$ver deployed" ]]; then
-    ok "$rel $ver is already installed (deployed) – left unchanged"
-  else
-    warn "$rel is installed as '$current', expected '$ver deployed' – left unchanged (see doc 03, section 16.1)"
-  fi
-}
-
-# apply_manifest FILE – creates the resources; existing ones that differ are only
-# changed with --force (the difference is shown)
-apply_manifest() {
-  local f="$1" rc=0
-  kubectl diff -f "$f" >"$TMP/diff" 2>&1 || rc=$?
-  if [[ "$rc" -eq 0 ]]; then ok "$(basename "$f"): already applied, no difference"; return 0; fi
-  if [[ "$rc" -eq 1 ]] && kubectl get -f "$f" >/dev/null 2>&1; then
-    indent '    ' <"$TMP/diff"
-    [[ "$FLAG_FORCE" == 1 ]] || die "$(basename "$f") differs from the cluster (see above) – check lab.env, or apply it with --force"
-  fi
-  run kubectl apply -f "$f"
-}
-
 step "1/4 MetalLB $METALLB_VERSION and address range $LB_RANGE"
-install_chart metallb-system metallb metallb/metallb "$METALLB_VERSION" 10m
+helm_install_once metallb-system metallb metallb/metallb "$METALLB_VERSION" 10m
 if [[ "$DRY_RUN" != 1 ]]; then
   kubectl -n metallb-system rollout status deploy/metallb-controller --timeout=5m >/dev/null
 fi
@@ -62,25 +34,23 @@ apply_manifest "$TMP/metallb-pool.yaml"
 warn "the range $LB_RANGE must be excluded in the DHCP server (cannot be checked from here)"
 
 step "2/4 Longhorn $LONGHORN_VERSION"
-install_chart longhorn-system longhorn longhorn/longhorn "$LONGHORN_VERSION" 15m
+helm_install_once longhorn-system longhorn longhorn/longhorn "$LONGHORN_VERSION" 15m
 
 step "3/4 HAProxy Ingress $HAPROXY_INGRESS_VERSION on $LB_IP"
 render_template "$M/haproxy-values.yaml" LB_IP > "$TMP/haproxy-values.yaml"
-install_chart ingress-controller haproxy-ingress haproxy-ingress/haproxy-ingress "$HAPROXY_INGRESS_VERSION" 10m \
+helm_install_once ingress-controller haproxy-ingress haproxy-ingress/haproxy-ingress "$HAPROXY_INGRESS_VERSION" 10m \
   -f "$TMP/haproxy-values.yaml"
 if [[ -n "$(helm_chart_version ingress-controller haproxy-ingress)" ]]; then
   # compare the values of the running release with the file in the repository
-  norm() { yq -P '(... comments = "") | sort_keys(..)'; }   # without comments, sorted keys
-  if diff <(helm -n ingress-controller get values haproxy-ingress -o yaml | norm) \
-          <(norm <"$TMP/haproxy-values.yaml") >"$TMP/vdiff"; then
+  if helm_values_match ingress-controller haproxy-ingress "$TMP/haproxy-values.yaml"; then
     ok "values of the release match manifests/haproxy-values.yaml"
   else
-    warn "values of the release differ from manifests/haproxy-values.yaml:"; indent '    ' <"$TMP/vdiff"
+    warn "values of the release differ from manifests/haproxy-values.yaml (see above)"
   fi
 fi
 
 step "4/4 cert-manager $CERT_MANAGER_VERSION and ClusterIssuer"
-install_chart cert-manager cert-manager jetstack/cert-manager "$CERT_MANAGER_VERSION" 10m --set crds.enabled=true
+helm_install_once cert-manager cert-manager jetstack/cert-manager "$CERT_MANAGER_VERSION" 10m --set crds.enabled=true
 if [[ "$DRY_RUN" != 1 ]]; then
   kubectl -n cert-manager rollout status deploy/cert-manager-webhook --timeout=5m >/dev/null
 fi
