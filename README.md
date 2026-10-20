@@ -84,6 +84,10 @@ Each runbook follows the same structure: **symptom → step-by-step diagnosis �
 | 11 | [Container keeps restarting – OOMKilled](docs/11-oomkilled.md) | Memory limit too low, exit code 137, kernel OOM log |
 | 12 | [Worker node failure and replacement](docs/12-node-failure-replace-worker.md) | Hard power-off, StatefulSet volume handover, node replacement |
 
+## Automation
+
+The [`automation/`](automation/) folder contains Bash scripts that rebuild the lab step by step – one folder per document, with a central settings file, `--dry-run` for every script and read-only `verify-*.sh` checks. Section 01 is tested in the lab; the remaining sections are being added one by one.
+
 ## Lessons learned
 
 - **StatefulSets need a human decision.** After a worker lost power, the Deployment healed itself after about 5 minutes. The StatefulSet pod stayed stuck until the node was fenced and removed, and the RWO volume needed another ~6 minutes to detach – about 26 minutes of downtime in total.
