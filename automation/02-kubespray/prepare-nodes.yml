@@ -1,0 +1,55 @@
+# 02 – Prepare all nodes before the Kubespray installation.
+# Doc: docs/02-kubernetes-cluster-kubespray.md (section 4.3)
+# Started by prepare-nodes.sh; can also be run directly from ~/kubespray:
+#   ansible-playbook -i inventory/mycluster/inventory.ini <path>/prepare-nodes.yml
+
+- name: Prepare the Kubernetes nodes
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    # One line per node ("10.240.0.21 master"): control plane first, then the workers
+    # (groups['all'] alone is not in inventory order)
+    node_order: "{{ (groups['kube_control_plane'] + groups['kube_node'] + groups['all']) | unique }}"
+    hosts_block: "{{ node_order | map('extract', hostvars, 'ip') | zip(node_order) | map('join', ' ') | join('\n') }}"
+
+  tasks:
+    # Since v2.29 Kubespray no longer writes the nodes to /etc/hosts, and cloud-init
+    # rewrites /etc/hosts on every boot – so the block also goes into its template.
+    - name: Node names in /etc/hosts and in the cloud-init hosts template
+      ansible.builtin.blockinfile:
+        path: "{{ item }}"
+        block: "{{ hosts_block }}"
+        marker: "# {mark} k8s nodes"
+      loop:
+        - /etc/hosts
+        - /etc/cloud/templates/hosts.debian.tmpl
+
+    - name: Install chrony (replaces systemd-timesyncd)
+      ansible.builtin.apt:
+        name: chrony
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Wait until the clock is synchronised
+      ansible.builtin.command: timedatectl show -p NTPSynchronized --value
+      register: ntp
+      changed_when: false
+      check_mode: false
+      until: ntp.stdout == "yes"
+      retries: 24
+      delay: 5
+
+    - name: Check that there is no swap
+      ansible.builtin.command: swapon --noheadings --show
+      register: swap
+      changed_when: false
+      check_mode: false
+      failed_when: swap.stdout | length > 0
+
+    - name: Check that every node resolves every other node
+      ansible.builtin.command: "getent hosts {{ item }}"
+      loop: "{{ node_order }}"
+      changed_when: false
+      check_mode: false
