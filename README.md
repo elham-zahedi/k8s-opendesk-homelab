@@ -101,10 +101,6 @@ The [`automation/`](automation/) folder contains Bash scripts that rebuild the l
 
 All passwords, client secrets, SSH keys and kubeconfig files have been removed from this repository. IP addresses and domain names belong to an isolated private lab network.
 
-## Kurzfassung auf Deutsch
-
-Dieses Repository dokumentiert mein selbst aufgebautes Kubernetes-Homelab auf Proxmox: ein Cluster mit Kubespray, darauf openDesk mit Anbindung an Active Directory, Single Sign-on über Keycloak und Einbindung eines Windows-Dateiservers. Zu jedem Schritt gehören die tatsächlich aufgetretenen Fehler mit Ursache und Lösung. Dazu kommen Runbooks für typische Kubernetes-Störungen, die im Lab nachgestellt und Schritt für Schritt gelöst wurden. Die Originaldokumentation ist auf Deutsch entstanden.
-
 ---
 
 **Author:** Elham Zahedi · Built September – October 2026
