@@ -30,7 +30,8 @@ step "2/2 Checks (volumes can take a minute to attach)"
 k() { kubectl -n "$NS" "$@"; }
 check "PVC Bound (StorageClass longhorn)"   k wait --for=jsonpath='{.status.phase}'=Bound pvc/smoke-pvc --timeout=180s
 check "pod with the volume Running"         k wait --for=condition=Ready pod/smoke-vol --timeout=300s
-check "volume writable (log: longhorn-ok)"  bash -c "kubectl -n $NS logs smoke-vol | grep -qx longhorn-ok"
+# the log line can appear a moment after the pod is Ready – retry for up to 20 seconds
+check "volume writable (log: longhorn-ok)"  bash -c "for i in \$(seq 10); do kubectl -n $NS logs smoke-vol 2>/dev/null | grep -qx longhorn-ok && exit 0; sleep 2; done; exit 1"
 check "certificate Ready"                   k wait --for=condition=Ready certificate/smoke-cert --timeout=120s
 check "ingress got the default class haproxy" bash -c "kubectl -n $NS get ingress smoke-ingress -o jsonpath='{.spec.ingressClassName}' | grep -qx haproxy"
 check "nginx Running"                       k rollout status deploy/smoke-nginx --timeout=180s

@@ -8,6 +8,8 @@
 #   --force   replace a different ssoFederation block or client secret
 #
 # Merges manifests/sso-federation.yaml into helmfile/environments/<env>/values.yaml.gotmpl.
+# With IDP_ENFORCE=yes (default) openDesk skips its own login form and sends everyone
+# straight to the login page of the dedicated Keycloak (doc 04, section 19.5).
 # The client secret is read from the Keycloak admin API and written straight into
 # the file – it is never printed and never stored in the repository. The file is
 # outside Git (.gitignore of openDesk) and gets permissions 600.
@@ -27,7 +29,7 @@ VALUES="$OPENDESK_DIR/helmfile/environments/$OPENDESK_ENV/values.yaml.gotmpl"
 [[ -f "$VALUES" ]] || die "$VALUES not found – run 03-opendesk/prepare-opendesk.sh first"
 TMP="$(mktemp)"; add_exit_hook "rm -f $TMP"
 render_template "$AUTOMATION_DIR/04-identity/manifests/sso-federation.yaml" \
-  IDP_KEY IDP_DISPLAY_NAME IDP_URL IDP_REALM IDP_CLIENT >"$TMP"
+  IDP_KEY IDP_DISPLAY_NAME IDP_URL IDP_REALM IDP_CLIENT IDP_ENFORCE_KEY >"$TMP"
 SECRET_PATH=".functional.authentication.ssoFederation.idps[\"$IDP_KEY\"].idpDetails.config.clientSecret"
 sha() { sha256sum | cut -d' ' -f1; }
 
@@ -77,6 +79,8 @@ step "3/3 Checks"
 if [[ "$DRY_RUN" != 1 ]]; then
   check "values file is valid YAML"                    yq '.' "$VALUES"
   check "issuer $IDP_URL/realms/$IDP_REALM"            test "$(yq ".functional.authentication.ssoFederation.idps[\"$IDP_KEY\"].idpDetails.config.issuer" "$VALUES")" = "$IDP_URL/realms/$IDP_REALM"
+  check "enforceFederatedLogin: '$IDP_ENFORCE_KEY' (IDP_ENFORCE=$IDP_ENFORCE)" \
+    test "$(yq '.functional.authentication.ssoFederation.enforceFederatedLogin // ""' "$VALUES")" = "$IDP_ENFORCE_KEY"
   check "file permissions 600 (contains the client secret)" test "$(stat -c %a "$VALUES")" = 600
   check "values file is ignored by git"                git -C "$OPENDESK_DIR" check-ignore -q "$VALUES"
 fi

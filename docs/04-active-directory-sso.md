@@ -1434,6 +1434,44 @@ unset TOKEN
 
 ✔ **Expected:** `PUT: 204`; redirectUris = `https://id.k8s.lab/realms/opendesk/broker/sso-federation-idp-internIdP/endpoint`; webOrigins = `https://id.k8s.lab`.
 
+### 19.5 Login page: openDesk design and direct login
+
+In a production installation, users typed their AD password into the form of the openDesk login page instead of pressing "Anmeldung mit AD-Konto". That form only knows the local openDesk accounts, so the login failed. Two changes avoid this:
+
+1. **Direct login** (`IDP_ENFORCE=yes`, the default): `configure-sso.sh` sets `enforceFederatedLogin` to the key of the identity provider (`internIdP`). openDesk then skips its own form and sends every login straight to `https://idp.k8s.lab` – in Keycloak this is the "Identity Provider Redirector" with a default provider.
+2. **The same design on idp.k8s.lab** (`IDP_LOGIN_THEME=opendesk`, the default): the dedicated Keycloak has the same major version as the Keycloak of openDesk (26.x), so the openDesk theme `UCS` works there unchanged. `setup-keycloak-idp.sh` copies `/opt/keycloak/themes/UCS/login` from `ums-keycloak-0` into the ConfigMap `idp-login-theme`, mounts it as theme `opendesk` and passes the `UNIVENTION_*` variables of the openDesk Keycloak (addresses of `theme.css`, `custom.css` and the favicon on the portal). `configure-keycloak-realm.sh` sets the theme and the language `IDP_LOCALE` (German) for the realm `intern`.
+
+The logo needs one addition: `custom.css` sets it as `--login-logo: url("/opendesk-static-files/login/logo.svg")`, a path that only exists on `id.k8s.lab`. The script appends a rule with the full address `https://id.k8s.lab/…` to the last stylesheet of the copied theme.
+
+Backup before the change (the realm lives only in the database of the dedicated Keycloak):
+
+```bash
+D=~/backups/keycloak-idp/$(date +%F-%H%M); mkdir -p $D && chmod 700 ~/backups/keycloak-idp $D
+kubectl -n idp exec keycloak-postgres-0 -- pg_dump -U keycloak -d keycloak -Fc > $D/keycloak-db.dump
+helm -n idp get values keycloak -o yaml > $D/keycloak-values.yaml
+cp -p ~/opendesk/helmfile/environments/dev/values.yaml.gotmpl $D/ && chmod 600 $D/*
+head -c 5 $D/keycloak-db.dump; echo        # PGDMP
+./ops/etcd-backup.sh before-login-page
+```
+
+Then (on an existing installation each script first with `--dry-run`, then with `--force`):
+
+```bash
+./04-identity/setup-keycloak-idp.sh          # copies the design; Keycloak restarts once (about 1 minute)
+./04-identity/configure-keycloak-realm.sh    # design and language of the realm intern
+./04-identity/configure-sso.sh               # enforceFederatedLogin
+HELMFILE_SELECTOR=name=opendesk-keycloak-bootstrap ./03-opendesk/deploy-opendesk.sh
+./04-identity/verify-sso.sh
+```
+
+✔ **Expected:** `verify-sso.sh` reports "login page is served with the design opendesk" and "login of the portal goes straight to sso-federation-idp-internIdP". In a new private window, `https://portal.k8s.lab` shows the login page of `idp.k8s.lab` directly: openDesk design and logo, German, no button "Anmeldung mit AD-Konto" any more.
+
+Consequences:
+
+- **Local openDesk accounts** (e.g. the Nubus Administrator) have no login form in the browser any more. To log in with one: `IDP_ENFORCE=no` in `lab.env`, `configure-sso.sh --force`, roll out `opendesk-keycloak-bootstrap`; afterwards back to `yes`. The scripts are not affected – they use the UDM REST API directly.
+- **No "Passwort vergessen?"** on the new page: AD passwords are changed in AD, not in openDesk.
+- **After an openDesk update** the design can change: `setup-keycloak-idp.sh --dry-run` shows the differing files, `--force` copies them again.
+
 ## 20. Acceptance in the browser
 
 Expected mounts per test account, derived from `testkonten.txt` and `nc-mounts.csv`:
@@ -1445,7 +1483,7 @@ while IFS=';' read -r role name groups; do
 done < ~/testkonten.txt
 ```
 
-Each account in a new private window: `https://portal.k8s.lab` → Log in → "Anmeldung mit AD-Konto" (Login with AD account) → login name + test password → Files → External storage.
+Each account in a new private window: `https://portal.k8s.lab` → login page of idp.k8s.lab (section 19.5; before that: Log in → "Anmeldung mit AD-Konto") → login name + test password → Files → External storage.
 
 | Account | Must see (count) | Check in particular | Result |
 |---|---|---|---|
@@ -1535,6 +1573,7 @@ yq '.functional.authentication.ssoFederation.idps.internIdP.idpDetails.config.cl
 | cluster-wide | PVs `pv-fs-allgemein`, `-austausch`, `-abteilungen`, `-projekte` (100Gi, RWX, Retain) | SMB `//10.240.0.223/…` |
 | idp | StatefulSet `keycloak-postgres`, PVC `data-keycloak-postgres-0` (8Gi) | Keycloak database |
 | idp | Release `keycloak` (StatefulSet `keycloak-keycloakx`), ingress `keycloak-keycloakx` | Keycloak idp.k8s.lab |
+| idp | ConfigMap `idp-login-theme` | Login page in the openDesk design (section 19.5) |
 | idp | Secrets `keycloak-db`, `keycloak-admin`, `ad-root-ca`, `opendesk-ca-copy`, `idp-tls`; issuer `idp-ca-issuer`; certificate `idp-tls` | Access, truststore, TLS |
 
 ### 21.5 Test accounts (generated test data)
@@ -1756,7 +1795,7 @@ Only if the four shares will be used exclusively through Nextcloud from now on: 
 - After Kubespray runs: check `external_zones` (`k8s.lab`, `lab.local`) in CoreDNS and nodelocaldns, and strictARP ([03](03-opendesk-deployment.md), section 18).
 - After kernel updates: `nls_utf8` (section 10).
 - After a reinstallation of openDesk: repeat parts B to D, distribute the new CA to the workstations.
-- Check the login via "Login with AD account".
+- Check the login via "Login with AD account"; `setup-keycloak-idp.sh --dry-run` shows whether openDesk changed its login design (section 19.5).
 
 ### 24.5 What is still missing for production
 
@@ -1764,7 +1803,7 @@ Only if the four shares will be used exclusively through Nextcloud from now on: 
 - **High availability:** one DC, one control plane, one Keycloak replica. If AD-DC fails, login, import, SMB mounts and `*.k8s.lab` are affected; if FS is unreachable, Nextcloud does not start.
 - **Backup:** the realm `intern` only lives in `idp/keycloak-postgres`; a Longhorn backup target is missing.
 - **Client secret in plain text** in `dev/values.yaml.gotmpl` (the file is outside of Git; check chmod).
-- **Single logout** not set up; `enforceFederatedLogin` empty (local login stays as a fallback).
+- **Single logout** not set up. `enforceFederatedLogin` is set (section 19.5): there is no local login form in the browser; for the Nubus Administrator set `IDP_ENFORCE=no` for the time of the change.
 - **Home$** not in Nextcloud (stays drive H:).
 - **Logging:** on FS, all access shows up as svc-nextcloud; the actual user is only visible in the Nextcloud log.
 - **Personalakten:** only acceptable as long as G-Personal-Mitarbeiter and G-Personalakten have the same members.
