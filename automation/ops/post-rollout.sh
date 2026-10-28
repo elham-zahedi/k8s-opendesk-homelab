@@ -11,7 +11,8 @@
 # 2. Groupware group: Nubus only adds a user to the group when the user object
 #    changes (doc 05, error F2). Users with isOxUser = true that are missing are
 #    added. No member is removed.
-# 3. Runs the checks for Nextcloud files, SSO and – if enabled – OX App Suite.
+# 3. Runs the checks for Nextcloud files (mount list NC_MOUNTS_CSV), SSO and – if
+#    enabled – OX App Suite.
 
 # shellcheck source=../lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"

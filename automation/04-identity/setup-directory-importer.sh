@@ -5,13 +5,15 @@
 # Run on:  kubespray VM as k8s (needs fetch-ad-files.sh for the root CA)
 # Usage:   ./setup-directory-importer.sh [--dry-run] [--force]
 #
-#   --force   replace secrets, values file or release values that differ – e.g. after
-#             the Nubus administrator password was changed (secret udm-credentials)
+#   --force   replace the AD secrets, the values file or release values that differ
 #
 # Creates namespace, secrets, the target OU and the mail domain in Nubus, the values
 # file ~/directory-importer/custom-values.yaml and the Helm release. Everything that
 # already exists is only compared. Asks for the password of the AD service account
 # (or takes it from $AD_IMPORT_PASSWORD) only if its secret does not exist yet.
+# The secret udm-credentials always follows the current Nubus Administrator password:
+# after a change in the portal, run the script again – it asks for the new password
+# (or takes it from $NUBUS_ADMIN_PASSWORD / NUBUS_ADMIN_PASSWORD_FILE).
 
 # shellcheck source=../lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
@@ -52,25 +54,23 @@ else
   printf '%s' "$AD_IMPORT_PASSWORD" | put_secret "$NS" ad-bind-credentials password
 fi
 
-nubus_sha="$(secret_value "$OPENDESK_NAMESPACE" ums-nubus-credentials administrator_password | sha)"
+# The importer logs in to Nubus as Administrator with the password that udm_connect has
+# just checked – also after it was changed in the portal (then it is asked for).
+udm_connect
 if ! secret_exists "$NS" udm-credentials; then
-  secret_value "$OPENDESK_NAMESPACE" ums-nubus-credentials administrator_password | put_secret "$NS" udm-credentials password
-elif [[ "$(secret_value "$NS" udm-credentials password | sha)" == "$nubus_sha" ]]; then
-  ok "secret udm-credentials matches the Nubus administrator password"
+  printf '%s' "$UDM_PW" | put_secret "$NS" udm-credentials password
+elif [[ "$(secret_value "$NS" udm-credentials password | sha)" == "$(printf '%s' "$UDM_PW" | sha)" ]]; then
+  ok "secret udm-credentials matches the current Nubus administrator password"
 else
-  warn "secret udm-credentials differs from the current Nubus administrator password (changed in the portal?)"
-  if [[ "$FLAG_FORCE" == 1 ]]; then
-    ask_secret NUBUS_ADMIN_PASSWORD "Current Nubus administrator password"
-    printf '%s' "$NUBUS_ADMIN_PASSWORD" | put_secret "$NS" udm-credentials password
+  warn "secret udm-credentials differs from the current Nubus administrator password – replaced"
+  printf '%s' "$UDM_PW" | put_secret "$NS" udm-credentials password
+  if kubectl -n "$NS" get deployment directory-importer >/dev/null 2>&1; then
     run kubectl -n "$NS" rollout restart deployment/directory-importer
-  else
-    info "if the password was changed in the portal, run again with --force (doc 04, section 24.3)"
   fi
 fi
 
 # ------------------------------------------------------------------------------
 step "2/5 Target OU ou=$NUBUS_OU and mail domain $AD_DOMAIN in Nubus"
-udm_connect
 if [[ "$(udm_count "container/ou/?filter=$(urlencode "ou=$NUBUS_OU")")" -ge 1 ]]; then
   ok "OU $NUBUS_OU exists"
 else

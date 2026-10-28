@@ -18,13 +18,13 @@ All names (domain, DC, OUs, service accounts, shares, realm) are in section "04"
 | 7 | `patch-nextcloud-volumes.sh` | Adds the SMB volumes to `values-nextcloud.yaml.gotmpl` (found by content, not line numbers) and saves the change as a patch | Only if not patched yet |
 | 8 | `HELMFILE_SELECTOR=name=opendesk-nextcloud ../03-opendesk/deploy-opendesk.sh` | Rolls out Nextcloud with the volumes | Yes |
 | 9 | `enable-fileshare-groups.sh` | Enables `files_external`, releases the groups of the mount list in Nubus | Only groups not released yet |
-| 10 | `nc-mounts.sh [--apply]` | Creates the 27 mounts of [`manifests/nc-mounts.csv`](manifests/nc-mounts.csv); plan only without `--apply` | With `--apply` |
+| 10 | `nc-mounts.sh [--apply]` | Creates the mounts of the mount list `NC_MOUNTS_CSV` (example: the 27 mounts of [`manifests/nc-mounts.csv`](manifests/nc-mounts.csv)); plan only without `--apply` | With `--apply` |
 | 11 | `verify-nextcloud-files.sh` | `nls_utf8` on all nodes, write test in every data directory, every mount compared with the list | No (test files) |
-| 12 | `setup-keycloak-idp.sh` | Passwords, PostgreSQL, CA copy, certificate, Keycloak release; renews the CA copy when the openDesk CA was renewed | Only what is missing |
-| 13 | `configure-keycloak-realm.sh` | Realm, LDAP provider to AD, username mapper, OIDC client with redirect and post-logout URI – via the admin REST API | Only what is missing; `--force` corrects |
-| 14 | `configure-sso.sh` | Adds the `ssoFederation` block with the client secret to the openDesk configuration | Only if missing |
+| 12 | `setup-keycloak-idp.sh` | Passwords, PostgreSQL, CA copy, certificate, login page in the openDesk design (copied from the openDesk Keycloak into the ConfigMap `idp-login-theme`), Keycloak release; renews the CA copy when the openDesk CA was renewed | Only what is missing; `--force` copies a changed design again |
+| 13 | `configure-keycloak-realm.sh` | Realm with login page (design `IDP_LOGIN_THEME`, language `IDP_LOCALE`), LDAP provider to AD, username mapper, OIDC client with redirect and post-logout URI – via the admin REST API | Only what is missing; `--force` corrects |
+| 14 | `configure-sso.sh` | Adds the `ssoFederation` block with the client secret to the openDesk configuration; with `IDP_ENFORCE=yes` openDesk skips its own login form and sends everyone straight to the login page of the dedicated Keycloak | Only if missing; `--force` replaces |
 | 15 | `HELMFILE_SELECTOR=name=opendesk-keycloak-bootstrap ../03-opendesk/deploy-opendesk.sh` | Creates the identity provider in openDesk | Yes |
-| 16 | `verify-sso.sh` | Keycloak, issuer from outside and from a pod, certificates, users in the realm, client, secret, identity provider in openDesk | No (test pod) |
+| 16 | `verify-sso.sh` | Keycloak, issuer from outside and from a pod, certificates, users in the realm, client, secret, login page (design, language), identity provider in openDesk, direct login without the openDesk form | No (test pod) |
 | 17 | `../windows/set-test-passwords.ps1` (DC) | Test password for the browser test; `-RequireChangeAtLogon` afterwards | Yes |
 
 The browser test with one login per test account stays manual (doc 04, section 20).
@@ -38,10 +38,11 @@ Passwords of the AD service accounts are asked for (hidden input) only when the 
 | Event | Run |
 |---|---|
 | Kernel update (before rebooting the nodes) | `setup-smb-storage.sh` – installs `linux-modules-extra` also for the newest installed kernel |
-| Nubus administrator password changed | `setup-directory-importer.sh --force` |
+| Nubus administrator password changed | `setup-directory-importer.sh` – asks for the current password and updates the secret `udm-credentials` |
 | openDesk CA renewed by cert-manager | `setup-keycloak-idp.sh`, then `../03-opendesk/export-ca.sh` and `../windows/import-ca.ps1` |
 | Every rollout (`helmfile apply`) | `../ops/post-rollout.sh` – enables `files_external` again and runs the checks |
-| openDesk update | `patch-nextcloud-volumes.sh`, `nc-mounts.sh` (only `SKIP`), then `../ops/post-rollout.sh` |
+| openDesk update | `patch-nextcloud-volumes.sh`, `nc-mounts.sh` (only `SKIP`), then `../ops/post-rollout.sh`; `setup-keycloak-idp.sh --dry-run` – if openDesk changed its login design, copy it again with `--force` (Keycloak restarts, about 1 minute) |
+| A local openDesk account (e.g. the Nubus Administrator) must log in in the browser | `IDP_ENFORCE=no` in `lab.env`, `configure-sso.sh --force`, roll out `opendesk-keycloak-bootstrap` – and back to `yes` afterwards |
 
 ## Testing on a running lab
 

@@ -204,6 +204,11 @@ identity_vars() {
   OPENDESK_ID_FQDN="id.$DOMAIN"                    # Keycloak of openDesk
   IDP_ALIAS="sso-federation-idp-$IDP_KEY"
   IDP_REDIRECT_URI="https://$OPENDESK_ID_FQDN/realms/opendesk/broker/$IDP_ALIAS/endpoint"
+  # login page (doc 04, section 19.5) – defaults for a lab.env from before these settings
+  IDP_LOGIN_THEME="${IDP_LOGIN_THEME-opendesk}"    # empty = Keycloak default page
+  IDP_LOCALE="${IDP_LOCALE-de}"                    # empty = English only
+  IDP_ENFORCE="${IDP_ENFORCE:-yes}"                # yes = no openDesk login form, straight to IDP
+  if [[ "$IDP_ENFORCE" == yes ]]; then IDP_ENFORCE_KEY="$IDP_KEY"; else IDP_ENFORCE_KEY=""; fi
   UDM_URL_IN_CLUSTER="http://ums-udm-rest-api.$OPENDESK_NAMESPACE.svc.cluster.local:9979/univention/udm/"
 }
 
@@ -289,12 +294,28 @@ put_secret() {
 
 # ---- Nubus UDM REST API (through kubectl port-forward, password via curl config on a pipe)
 UDM_BODY=""; UDM_STATUS=""
+# udm_connect – port-forward to the UDM REST API and check the login as Administrator.
+# The secret ums-nubus-credentials holds the password from the installation. Once it was
+# changed in the portal (doc 03, section 13), the current one is taken from
+# $NUBUS_ADMIN_PASSWORD or the file NUBUS_ADMIN_PASSWORD_FILE, or asked for.
 udm_connect() {
   UDM_BODY="$(mktemp)"
-  UDM_PW="$(secret_value "$OPENDESK_NAMESPACE" ums-nubus-credentials administrator_password)"
-  [[ -n "$UDM_PW" ]] || die "Nubus administrator password not found (secret ums-nubus-credentials)"
-  port_forward "$OPENDESK_NAMESPACE" ums-udm-rest-api 19979:9979
   add_exit_hook "rm -f $UDM_BODY"
+  port_forward "$OPENDESK_NAMESPACE" ums-udm-rest-api 19979:9979
+  if [[ -z "${NUBUS_ADMIN_PASSWORD:-}" && -s "${NUBUS_ADMIN_PASSWORD_FILE:-}" ]]; then
+    NUBUS_ADMIN_PASSWORD="$(cat "$NUBUS_ADMIN_PASSWORD_FILE")"
+  fi
+  UDM_PW="${NUBUS_ADMIN_PASSWORD:-$(secret_value "$OPENDESK_NAMESPACE" ums-nubus-credentials administrator_password)}"
+  [[ -n "$UDM_PW" ]] || die "Nubus administrator password not found (secret ums-nubus-credentials)"
+  udm GET ""
+  if [[ "$UDM_STATUS" == 401 && -z "${NUBUS_ADMIN_PASSWORD:-}" && -t 0 ]]; then
+    warn "the Administrator password from the installation no longer works (changed in the portal)"
+    read -rsp "  Current password of the Nubus Administrator: " NUBUS_ADMIN_PASSWORD; echo
+    UDM_PW="$NUBUS_ADMIN_PASSWORD"
+    udm GET ""
+  fi
+  [[ "$UDM_STATUS" == 200 ]] \
+    || die "login as Administrator at the UDM REST API failed (HTTP $UDM_STATUS) – after a password change set NUBUS_ADMIN_PASSWORD_FILE in lab.env"
 }
 # udm METHOD PATH [JSON] – body in $UDM_BODY, HTTP status in $UDM_STATUS
 udm() {

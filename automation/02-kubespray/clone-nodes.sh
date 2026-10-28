@@ -34,7 +34,7 @@ else
   done
   ok "template $TEMPLATE_ID found, all ${#NODE_NAMES[@]} VM IDs are free"
 fi
-warn "Make sure the IP addresses are not in use (the Proxmox host cannot ping into the VM network):"
+warn "Make sure the IP addresses are not in use and outside the DHCP range (a ping does not find devices that are switched off):"
 for i in "${!NODE_NAMES[@]}"; do info "  ${NODE_NAMES[$i]}  VM ${NODE_IDS[$i]}  ${NODE_IPS[$i]}/${NET_PREFIX}  (${NODE_ROLES[$i]})"; done
 confirm "Clone and start these ${#NODE_NAMES[@]} VM(s)?" || die "aborted"
 
@@ -43,6 +43,9 @@ for i in "${!NODE_NAMES[@]}"; do
   step "Clone $name (VM $id, $ip)"
   run qm clone "$TEMPLATE_ID" "$id" --name "$name" --full --storage "$PVE_STORAGE"
   run qm set "$id" --ipconfig0 "ip=$ip/$NET_PREFIX,gw=$GATEWAY"
+  # start with the Proxmox host: control plane first, the workers 60 seconds later
+  if [[ "${NODE_ROLES[$i]}" == worker ]]; then boot="order=2"; else boot="order=1,up=60"; fi
+  run qm set "$id" --onboot 1 --startup "$boot"
   run qm start "$id"
 done
 
