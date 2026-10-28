@@ -58,6 +58,16 @@ kc GET "/$IDP_REALM/clients/$CID/client-secret"; ks="$(jq -r '.value // ""' "$KC
 VALUES="$OPENDESK_DIR/helmfile/environments/$OPENDESK_ENV/values.yaml.gotmpl"
 vs="$(yq ".functional.authentication.ssoFederation.idps[\"$IDP_KEY\"].idpDetails.config.clientSecret // \"\"" "$VALUES" | tr -d '\n' | sha)"
 check "client secret in the openDesk configuration matches Keycloak" test "$ks" = "$vs"
+kc GET "/$IDP_REALM"
+if [[ -n "$IDP_LOGIN_THEME" ]]; then
+  check "realm $IDP_REALM uses the login design $IDP_LOGIN_THEME (doc 04, section 19.5)" \
+    jq -e --arg t "$IDP_LOGIN_THEME" '.loginTheme == $t' "$KC_BODY"
+  page="$(curl -s --cacert "$OPENDESK_CA_FILE" "$IDP_URL/realms/$IDP_REALM/protocol/openid-connect/auth?client_id=$(urlencode "$IDP_CLIENT")&redirect_uri=$(urlencode "$IDP_REDIRECT_URI")&response_type=code&scope=openid" || true)"
+  check "login page is served with the design $IDP_LOGIN_THEME" grep -q "/login/$IDP_LOGIN_THEME/" <<<"$page"
+fi
+if [[ -n "$IDP_LOCALE" ]]; then
+  check "login page in language $IDP_LOCALE" jq -e --arg l "$IDP_LOCALE" '.internationalizationEnabled and .defaultLocale == $l' "$KC_BODY"
+fi
 
 step "4/4 Identity provider in the openDesk Keycloak"
 pw="$(secret_value "$OPENDESK_NAMESPACE" opendesk-keycloak-bootstrap-admin-creds admin.yaml | grep -i password | awk '{print $2}' | tr -d '"')"
@@ -71,6 +81,19 @@ idps="$(curl -s -H @<(printf 'Authorization: Bearer %s\n' "$token") \
 unset token
 check "$IDP_ALIAS exists and is enabled" jq -e --arg a "$IDP_ALIAS" '[.[] | select(.alias == $a and .enabled)] | length == 1' <<<"$idps"
 info "display name: $(jq -r --arg a "$IDP_ALIAS" '.[] | select(.alias == $a) | .displayName' <<<"$idps" 2>/dev/null)"
-info "Browser test: https://portal.$DOMAIN -> Log in -> \"$IDP_DISPLAY_NAME\" (doc 04, section 20)"
+VALUES_ENFORCE="$(yq '.functional.authentication.ssoFederation.enforceFederatedLogin // ""' "$VALUES")"
+check "enforceFederatedLogin: '$IDP_ENFORCE_KEY' (IDP_ENFORCE=$IDP_ENFORCE)" test "$VALUES_ENFORCE" = "$IDP_ENFORCE_KEY"
+# A login of the portal, as the browser starts it: with IDP_ENFORCE=yes the openDesk
+# Keycloak answers with a redirect to the broker instead of its own login form. The
+# portal client requires PKCE; the challenge is a fixed example value, no login happens.
+portal="https://portal.$DOMAIN/univention/oidc/"
+start="https://$OPENDESK_ID_FQDN/realms/opendesk/protocol/openid-connect/auth?client_id=$(urlencode "$portal")&redirect_uri=$(urlencode "$portal")&response_type=code&scope=openid&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256"
+target="$(curl -s --cacert "$OPENDESK_CA_FILE" -o /dev/null -w '%{redirect_url}' "$start" || true)"
+if [[ "$IDP_ENFORCE" == yes ]]; then
+  check "login of the portal goes straight to $IDP_ALIAS (no openDesk login form)" grep -q "/broker/$IDP_ALIAS/login" <<<"$target"
+  info "Browser test: https://portal.$DOMAIN shows the login page of $IDP_FQDN directly (doc 04, section 20)"
+else
+  info "Browser test: https://portal.$DOMAIN -> Log in -> \"$IDP_DISPLAY_NAME\" (doc 04, section 20)"
+fi
 
 check_summary

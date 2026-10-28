@@ -6,17 +6,18 @@
 # Usage:   ./enable-fileshare-groups.sh [--dry-run] [CSV]
 #
 # Nextcloud only reads groups with opendeskFileshareEnabled=TRUE. The groups are
-# taken from the mount list (default manifests/nc-mounts.csv, column "target" of
+# taken from the mount list (default NC_MOUNTS_CSV in lab.env, column "target" of
 # the type "group"), so no group is released that has no mount. Groups that are
 # already released are left unchanged.
 
 # shellcheck source=../lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 
-CSV="$AUTOMATION_DIR/04-identity/manifests/nc-mounts.csv"; args=()
+CSV=""; args=()
 for a in "$@"; do if [[ "$a" == -* ]]; then args+=("$a"); else CSV="$a"; fi; done
 parse_common_args "${args[@]}"
 load_env
+CSV="${CSV:-${NC_MOUNTS_CSV:-$AUTOMATION_DIR/04-identity/manifests/nc-mounts.csv}}"   # argument > lab.env > example list
 require_vars NUBUS_OU NUBUS_BASE_DN OPENDESK_NAMESPACE
 identity_vars
 require_cmd jq curl
@@ -49,6 +50,10 @@ for g in "${GROUPS_LIST[@]}"; do
   [[ "$DRY_RUN" == 1 ]] && continue
   udm PATCH "$path" '{"properties":{"opendeskFileshareEnabled":true}}'
   check "$g released (HTTP $UDM_STATUS)" test "$UDM_STATUS" = 204
+  # Nextcloud keeps the LDAP group memberships in its database and refreshes them only
+  # once an hour (background job UpdateGroups). Without this, the members of a newly
+  # released group do not see its mounts for up to an hour ("Path not found").
+  run occ ldap:check-group "$g" --update
 done
 info "$changed group(s) changed"
 if [[ "$CHECKS_FAILED" -gt 0 ]]; then check_summary; fi

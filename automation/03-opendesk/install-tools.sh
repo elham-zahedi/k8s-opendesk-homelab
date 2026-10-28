@@ -57,7 +57,7 @@ else
 fi
 
 step "5/5 Helm chart repositories"
-repos="$(helm repo list 2>/dev/null | awk 'NR > 1 {print $1}')"
+repos="$(helm repo list 2>/dev/null | awk 'NR > 1 {print $1}' || true)"   # helm exits 1 when no repository exists yet
 for entry in metallb=https://metallb.github.io/metallb \
              longhorn=https://charts.longhorn.io \
              haproxy-ingress=https://haproxy-ingress.github.io/charts \
