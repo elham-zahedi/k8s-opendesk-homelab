@@ -3,7 +3,7 @@
 #
 # Doc:     docs/04-active-directory-sso.md (sections 11, 12, 15 and 24.2)
 # Run on:  kubespray VM as k8s
-# Usage:   ./verify-nextcloud-files.sh [CSV]
+# Usage:   ./verify-nextcloud-files.sh [CSV]      (default NC_MOUNTS_CSV in lab.env)
 #
 # - nls_utf8 loaded on all nodes (otherwise the SMB mounts fail after a kernel update)
 # - every data directory of the mount list is writable from the Nextcloud pod
@@ -15,10 +15,11 @@
 # shellcheck source=../lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 
-CSV="$AUTOMATION_DIR/04-identity/manifests/nc-mounts.csv"; args=()
+CSV=""; args=()
 for a in "$@"; do if [[ "$a" == -* ]]; then args+=("$a"); else CSV="$a"; fi; done
 parse_common_args "${args[@]}"
 load_env
+CSV="${CSV:-${NC_MOUNTS_CSV:-$AUTOMATION_DIR/04-identity/manifests/nc-mounts.csv}}"   # argument > lab.env > example list
 require_vars OPENDESK_NAMESPACE INVENTORY_NAME SMB_SHARES
 require_cmd jq
 use_kubectl

@@ -7,7 +7,7 @@
 # Usage:   ./nc-mounts.sh [CSV]            plan only (default), changes nothing
 #          ./nc-mounts.sh [CSV] --apply    create the missing mounts
 #
-# CSV (default manifests/nc-mounts.csv): mountpoint;datadir;type;target;mode;sharing
+# CSV (default NC_MOUNTS_CSV in lab.env): mountpoint;datadir;type;target;mode;sharing
 # Existing mount points are skipped, so the script can be run any number of times.
 # A mount without an assigned group/user would be visible to EVERYONE – it is
 # deleted again if the assignment fails, and the final check lists such mounts.
@@ -16,10 +16,11 @@
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 
 ALLOWED_FLAGS="apply"
-CSV="$AUTOMATION_DIR/04-identity/manifests/nc-mounts.csv"; args=()
+CSV=""; args=()
 for a in "$@"; do if [[ "$a" == -* ]]; then args+=("$a"); else CSV="$a"; fi; done
 parse_common_args "${args[@]}"
 load_env
+CSV="${CSV:-${NC_MOUNTS_CSV:-$AUTOMATION_DIR/04-identity/manifests/nc-mounts.csv}}"   # argument > lab.env > example list
 require_vars OPENDESK_NAMESPACE
 require_cmd jq
 use_kubectl

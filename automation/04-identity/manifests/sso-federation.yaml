@@ -5,7 +5,8 @@ functional:
   authentication:
     ssoFederation:
       enabled: true
-      enforceFederatedLogin: ""
+      # IDP key = openDesk skips its own login form (IDP_ENFORCE=yes, doc 04, section 19.5)
+      enforceFederatedLogin: "@IDP_ENFORCE_KEY@"
       idps:
         @IDP_KEY@:
           name: "@IDP_DISPLAY_NAME@"

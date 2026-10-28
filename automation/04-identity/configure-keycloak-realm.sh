@@ -2,15 +2,16 @@
 # 04 – Realm, LDAP federation to Active Directory and OIDC client for openDesk in the
 #      dedicated Keycloak – via the admin REST API instead of clicking in the console.
 #
-# Doc:     docs/04-active-directory-sso.md (sections 18, 19.2 and 19.4)
+# Doc:     docs/04-active-directory-sso.md (sections 18, 19.2, 19.4 and 19.5)
 # Run on:  kubespray VM as k8s
 # Usage:   ./configure-keycloak-realm.sh [--dry-run] [--force] [--sync]
 #
-#   --force   correct an existing LDAP provider or client that differs
+#   --force   correct an existing login page, LDAP provider or client that differs
 #   --sync    start a full user synchronisation from AD
 #
-# Creates what is missing: realm IDP_REALM, LDAP provider (read-only, LDAPS, subtree),
-# username mapper, client IDP_CLIENT with the redirect URI of openDesk. Existing
+# Creates what is missing: realm IDP_REALM with the login page (design IDP_LOGIN_THEME,
+# language IDP_LOCALE), LDAP provider (read-only, LDAPS, subtree), username mapper,
+# client IDP_CLIENT with the redirect URI of openDesk. Existing
 # objects are compared and only changed with --force. Asks for the password of the AD
 # service account (or takes $AD_KEYCLOAK_PASSWORD) only when the provider is created.
 
@@ -39,16 +40,39 @@ KEY_SETTINGS="vendor connectionUrl bindDn editMode usersDn usernameLDAPAttribute
 
 # ------------------------------------------------------------------------------
 step "1/4 Realm $R"
+NEW_REALM=0
 kc GET "/$R"
 if [[ "$KC_STATUS" == 200 ]]; then ok "realm $R exists"
 elif [[ "$KC_STATUS" == 404 ]]; then
   info "\$ create realm $R"
   if [[ "$DRY_RUN" != 1 ]]; then
     kc POST "" "{\"realm\":\"$R\",\"enabled\":true}"; [[ "$KC_STATUS" == 201 ]] || die "creating the realm failed (HTTP $KC_STATUS)"
-    kc GET "/$R"
+    kc GET "/$R"; NEW_REALM=1
   fi
 else die "reading the realm failed (HTTP $KC_STATUS)"; fi
 REALM_ID="$(jq -r '.id // empty' "$KC_BODY" 2>/dev/null || true)"
+
+# Login page (doc 04, section 19.5): the design is copied by setup-keycloak-idp.sh; the
+# language list always contains English as a fallback.
+WANTED_LOOK="$(jq -n --arg t "$IDP_LOGIN_THEME" --arg l "$IDP_LOCALE" '
+  (if $t == "" then {} else {loginTheme: $t} end)
+  + (if $l == "" then {} else {internationalizationEnabled: true, supportedLocales: ([$l, "en"] | unique), defaultLocale: $l} end)')"
+if [[ -n "$REALM_ID" && "$WANTED_LOOK" != "{}" ]]; then
+  bad="$(jq -r --argjson w "$WANTED_LOOK" '. as $c | $w | to_entries | map(select(
+          if .key == "supportedLocales" then (($c[.key] // []) | sort) != (.value | sort) else $c[.key] != .value end)
+        | .key) | join(" ")' "$KC_BODY")"
+  if [[ -z "$bad" ]]; then ok "login page: design ${IDP_LOGIN_THEME:-Keycloak default}, language ${IDP_LOCALE:-English}"
+  elif [[ "$FLAG_FORCE" == 1 || "$NEW_REALM" == 1 ]]; then
+    info "\$ set the login page: $(jq -c . <<<"$WANTED_LOOK")"
+    if [[ "$DRY_RUN" != 1 ]]; then
+      kc PUT "/$R" "$WANTED_LOOK"
+      check "login page set (HTTP $KC_STATUS)" test "$KC_STATUS" = 204
+    fi
+  else
+    for k in $bad; do warn "$k: $(jq -c --arg k "$k" '.[$k]' "$KC_BODY") (expected $(jq -c --arg k "$k" '.[$k]' <<<"$WANTED_LOOK"))"; done
+    warn "login page not changed – use --force to set it"
+  fi
+fi
 
 # ------------------------------------------------------------------------------
 step "2/4 LDAP provider (Active Directory $AD_DC_FQDN)"
@@ -84,13 +108,18 @@ else
   info "\$ create LDAP provider 'ldap' (bind $SVC_KEYCLOAK@$AD_DOMAIN, users $AD_USER_BASE)"
   if [[ "$DRY_RUN" != 1 ]]; then
     ask_secret AD_KEYCLOAK_PASSWORD "Password of $SVC_KEYCLOAK@$AD_DOMAIN"
-    # the request body contains the bind password, so it goes to curl on stdin
-    jq -n --argjson w "$WANTED_LDAP" --arg parent "$REALM_ID" --arg pw "$AD_KEYCLOAK_PASSWORD" '{
+    # The request body contains the bind password: it reaches jq through the environment
+    # (not as an argument) and curl through a file with mode 600 (mktemp). No pipe into
+    # kc – the function would run in a subshell and KC_STATUS would be lost.
+    body="$(mktemp)"; add_exit_hook "rm -f $body"
+    KC_BIND_PW="$AD_KEYCLOAK_PASSWORD" jq -n --argjson w "$WANTED_LDAP" --arg parent "$REALM_ID" '{
         name: "ldap", providerId: "ldap", providerType: "org.keycloak.storage.UserStorageProvider", parentId: $parent,
         config: (($w + {enabled: "true", priority: "0", connectionPooling: "true", pagination: "true",
-                       fullSyncPeriod: "-1", batchSizeForSync: "1000", cachePolicy: "DEFAULT", bindCredential: $pw})
-                 | with_entries(.value = [.value]))}' | kc POST "/$R/components" @-
-    [[ "$KC_STATUS" == 201 ]] || die "creating the LDAP provider failed (HTTP $KC_STATUS)"
+                       fullSyncPeriod: "-1", batchSizeForSync: "1000", cachePolicy: "DEFAULT", bindCredential: $ENV.KC_BIND_PW})
+                 | with_entries(.value = [.value]))}' >"$body"
+    kc POST "/$R/components" "@$body"
+    rm -f "$body"
+    [[ "$KC_STATUS" == 201 ]] || die "creating the LDAP provider failed (HTTP $KC_STATUS): $(head -c 300 "$KC_BODY")"
     kc GET "/$R/components?type=org.keycloak.storage.UserStorageProvider"
     LDAP_ID="$(jq -r '[.[] | select(.providerId == "ldap")][0].id' "$KC_BODY")"
     ok "provider created"
