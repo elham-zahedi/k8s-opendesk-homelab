@@ -1150,7 +1150,7 @@ helmfile -e dev apply -n opendesk 2>&1 | tee ~/opendesk-apply-$(date +%F).log
 - **PVC sizes:** created with the chart defaults; adjust them for real data.
 - **cluster.service.type:** check whether ClusterIP should be used instead of NodePort (NodePort occupies many ports in 30000 – 32767).
 - **Longhorn on a separate disk** instead of the system disk.
-- **Consistent VM backup:** shut down all machines, then back them up to PBS-5Tib.
+- **Consistent VM backup:** shut down all machines, then back them up to pbs-backup.
 
 ### 18.6 Final checklist
 
@@ -1168,7 +1168,7 @@ helmfile -e dev apply -n opendesk 2>&1 | tee ~/opendesk-apply-$(date +%F).log
 - [ ] NRPT rule on Windows removed
 - [ ] DHCP exclusion 10.240.0.190 – .199 checked
 - [ ] Master password in the password manager, etcd backups copied to FS
-- [ ] All VMs backed up to PBS-5Tib
+- [ ] All VMs backed up to pbs-backup
 - [ ] CA expiry date (06.01.2027) in the calendar
 
 ---

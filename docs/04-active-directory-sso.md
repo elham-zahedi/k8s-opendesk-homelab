@@ -58,7 +58,7 @@ flowchart LR
 
 | Machine | VM ID | IP | Role in this part |
 |---|---|---|---|
-| Proxmox host server1 | – | 192.0.2.10 | VM backups of AD-DC and FS (vzdump to PBS-5Tib) |
+| Proxmox host server1 | – | 192.0.2.10 | VM backups of AD-DC and FS (vzdump to pbs-backup) |
 | jumphost | 100 | 10.240.0.226 / 192.0.2.15 | Jump host; SSH to AD-DC, FS and kubespray |
 | kubespray | 104 | 10.240.0.200 | All cluster commands (user k8s) |
 | AD-DC | 114 | 10.240.0.234 | Domain controller `lab.local`, DNS, AD CS (INTERN-Root-CA), LDAPS; OpenSSH (cmd.exe as default shell) |
@@ -110,7 +110,7 @@ flowchart LR
 | etcd snapshot | `/etc/kubernetes/pki/etcd`, 127.0.0.1 | `/etc/ssl/etcd/ssl/admin-master*.pem`, `https://10.240.0.21:2379` |
 | DNS in the cluster | Search `lab.local`, CoreDNS `policy sequential` | `external_zones` (`k8s.lab`, `lab.local` → AD-DC) from [03](03-opendesk-deployment.md); FQDNs everywhere |
 | VM ID of AD-DC | 122 | 114 (according to `qm list`) |
-| VM backup | `vzdump --mode stop` | `vzdump --mode snapshot` to PBS-5Tib (DNS stays available) |
+| VM backup | `vzdump --mode stop` | `vzdump --mode snapshot` to pbs-backup (DNS stays available) |
 | Kernel module `nls_utf8` | Not mentioned | `linux-modules-extra` needed on all nodes (error F7) |
 | `helm install` | Without timeout | Always `--timeout 10m --wait`, then `helm list -a` |
 | Keycloak DB / admin passwords | Typed in with `read` | Generated with `openssl rand`, stored in `~/keycloak-*-password.txt` (chmod 600) |
@@ -258,10 +258,10 @@ Result on 08.10.2026 – the AD and FS side from an earlier phase was complete:
 ```bash
 qm list | grep -Ei 'ad-dc|fs'
 pvesm status | grep -i pbs
-vzdump 114 115 --mode snapshot --storage PBS-5Tib --notes-template "{{guestname}} before AD integration (Kubespray)"
+vzdump 114 115 --mode snapshot --storage pbs-backup --notes-template "{{guestname}} before AD integration (Kubespray)"
 ```
 
-✔ **Expected:** "Finished Backup of VM 114 (00:12:50)", "Finished Backup of VM 115 (00:00:33)", "Backup job finished successfully". Archives `vm/114/2026-10-08T13:22:27Z` and `vm/115/2026-10-08T13:35:17Z` on PBS-5Tib.
+✔ **Expected:** "Finished Backup of VM 114 (00:12:50)", "Finished Backup of VM 115 (00:00:33)", "Backup job finished successfully". Archives `vm/114/2026-10-08T13:22:27Z` and `vm/115/2026-10-08T13:35:17Z` on pbs-backup.
 
 > **Note:** `--mode snapshot` backs up while the VM keeps running, so AD-DC stays reachable as DNS server. The backup is crash-consistent because filesystem freeze is disabled in the VM options (section 23).
 
@@ -1815,7 +1815,7 @@ Only if the four shares will be used exclusively through Nextcloud from now on: 
 
 - [x] Pre-check, DNS from pods, ports 389/636/445
 - [x] Inventory of AD-DC and FS: everything from the earlier phase in place
-- [x] VM backup of AD-DC (114) and FS (115) to PBS-5Tib, etcd snapshot vor-ad-anbindung
+- [x] VM backup of AD-DC (114) and FS (115) to pbs-backup, etcd snapshot vor-ad-anbindung
 - [x] Root CA transferred, LDAPS verified, service account passwords checked
 - [x] Directory Importer: 500 users, 22 groups
 - [x] SMB CSI driver, `nls_utf8` on all nodes, 4 PV/PVC, write test 20/20
