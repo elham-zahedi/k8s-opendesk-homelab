@@ -84,11 +84,8 @@ info "display name: $(jq -r --arg a "$IDP_ALIAS" '.[] | select(.alias == $a) | .
 VALUES_ENFORCE="$(yq '.functional.authentication.ssoFederation.enforceFederatedLogin // ""' "$VALUES")"
 check "enforceFederatedLogin: '$IDP_ENFORCE_KEY' (IDP_ENFORCE=$IDP_ENFORCE)" test "$VALUES_ENFORCE" = "$IDP_ENFORCE_KEY"
 # A login of the portal, as the browser starts it: with IDP_ENFORCE=yes the openDesk
-# Keycloak answers with a redirect to the broker instead of its own login form. The
-# portal client requires PKCE; the challenge is a fixed example value, no login happens.
-portal="https://portal.$DOMAIN/univention/oidc/"
-start="https://$OPENDESK_ID_FQDN/realms/opendesk/protocol/openid-connect/auth?client_id=$(urlencode "$portal")&redirect_uri=$(urlencode "$portal")&response_type=code&scope=openid&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256"
-target="$(curl -s --cacert "$OPENDESK_CA_FILE" -o /dev/null -w '%{redirect_url}' "$start" || true)"
+# Keycloak answers with a redirect to the broker instead of its own login form.
+target="$(portal_login_redirect)"
 if [[ "$IDP_ENFORCE" == yes ]]; then
   check "login of the portal goes straight to $IDP_ALIAS (no openDesk login form)" grep -q "/broker/$IDP_ALIAS/login" <<<"$target"
   info "Browser test: https://portal.$DOMAIN shows the login page of $IDP_FQDN directly (doc 04, section 20)"

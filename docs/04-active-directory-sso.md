@@ -1472,6 +1472,27 @@ Consequences:
 - **No "Passwort vergessen?"** on the new page: AD passwords are changed in AD, not in openDesk.
 - **After an openDesk update** the design can change: `setup-keycloak-idp.sh --dry-run` shows the differing files, `--force` copies them again.
 
+### 19.6 Self-service: only the photo, no openDesk password
+
+The menu "Benutzereinstellungen" of the portal offers "Mein Passwort ändern", "Meine Profildaten bearbeiten" and "Meine Passwort-Reset Optionen". With "Login with AD account" none of the password options makes sense: they change the internal openDesk password, which is not used for the login – the AD password stays the same, and users think they changed it. The profile also offered e-mail, phone numbers and a private address: the importer overwrites the e-mail from AD every 5 minutes, and private addresses do not belong into the address book of all colleagues.
+
+`configure-selfservice.sh` therefore
+
+1. adds [`manifests/ums-selfservice.yaml`](../automation/04-identity/manifests/ums-selfservice.yaml) (`SELFSERVICE_VALUES`) to `customization.release.ums` – the openDesk way to pass extra settings to Nubus. It switches off password change, password reset and the reset options in Nubus and limits the profile to `jpegPhoto`;
+2. deactivates the menu entries `swp.selfservice.change_password` and `swp.selfservice.protect_account`;
+3. checks the profile fields in the running `umc-server`. Nubus keeps its own default for `self-service/udm_attributes` in the same ConfigMap `ums-stack-data-ums-ucr`; the key appears twice and the last one wins. If that is the default, every line is set to `jpegPhoto` and `umc-server` restarted (the self-service and admin pages are away for about a minute).
+
+```bash
+./04-identity/configure-selfservice.sh --dry-run
+./04-identity/configure-selfservice.sh                          # step 1 – the first time only
+HELMFILE_SELECTOR=name=ums ./03-opendesk/deploy-opendesk.sh     # about 15 minutes
+./ops/post-rollout.sh                                           # steps 2 and 3, direct login again
+```
+
+> **Important:** a rollout of the release `ums` (Nubus) also runs its own Keycloak bootstrap, which resets the direct login of section 19.5 – the openDesk login form is back. `ops/post-rollout.sh` notices this and rolls out `opendesk-keycloak-bootstrap` again with `helmfile sync` (`apply` would skip it, its values did not change). The rollout of `ums` also activates the two menu entries again; `post-rollout.sh` hides them.
+
+✔ **Expected:** in "Benutzereinstellungen" only "Meine Profildaten bearbeiten" is left, and it only shows the photo. The page `…/univention/portal/#/selfservice/passwordchange` can still be opened by typing the address – it only changes the unused openDesk password and has no link any more.
+
 ## 20. Acceptance in the browser
 
 Expected mounts per test account, derived from `testkonten.txt` and `nc-mounts.csv`:
@@ -1574,6 +1595,7 @@ yq '.functional.authentication.ssoFederation.idps.internIdP.idpDetails.config.cl
 | idp | StatefulSet `keycloak-postgres`, PVC `data-keycloak-postgres-0` (8Gi) | Keycloak database |
 | idp | Release `keycloak` (StatefulSet `keycloak-keycloakx`), ingress `keycloak-keycloakx` | Keycloak idp.k8s.lab |
 | idp | ConfigMap `idp-login-theme` | Login page in the openDesk design (section 19.5) |
+| opendesk | Entries `swp.selfservice.change_password`, `swp.selfservice.protect_account` deactivated; `customization.release.ums` with `ums-selfservice.yaml` | Self-service without openDesk password, profile only photo (section 19.6) |
 | idp | Secrets `keycloak-db`, `keycloak-admin`, `ad-root-ca`, `opendesk-ca-copy`, `idp-tls`; issuer `idp-ca-issuer`; certificate `idp-tls` | Access, truststore, TLS |
 
 ### 21.5 Test accounts (generated test data)
@@ -1796,6 +1818,7 @@ Only if the four shares will be used exclusively through Nextcloud from now on: 
 - After kernel updates: `nls_utf8` (section 10).
 - After a reinstallation of openDesk: repeat parts B to D, distribute the new CA to the workstations.
 - Check the login via "Login with AD account"; `setup-keycloak-idp.sh --dry-run` shows whether openDesk changed its login design (section 19.5).
+- `ops/post-rollout.sh` after every rollout: it hides the self-service password entries again, checks the profile fields (section 19.6) and restores the direct login (section 19.5).
 
 ### 24.5 What is still missing for production
 

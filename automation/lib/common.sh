@@ -212,6 +212,16 @@ identity_vars() {
   UDM_URL_IN_CLUSTER="http://ums-udm-rest-api.$OPENDESK_NAMESPACE.svc.cluster.local:9979/univention/udm/"
 }
 
+# portal_login_redirect – where the openDesk Keycloak sends a login of the portal, as the
+# browser starts it. With IDP_ENFORCE=yes it is …/broker/IDP_ALIAS/login, otherwise the
+# openDesk login form answers (no redirect). The portal client requires PKCE; the
+# challenge is a fixed example value, no login happens (doc 04, section 19.5).
+portal_login_redirect() {
+  local portal="https://portal.$DOMAIN/univention/oidc/"
+  curl -s --cacert "$OPENDESK_CA_FILE" -o /dev/null -w '%{redirect_url}' \
+    "https://$OPENDESK_ID_FQDN/realms/opendesk/protocol/openid-connect/auth?client_id=$(urlencode "$portal")&redirect_uri=$(urlencode "$portal")&response_type=code&scope=openid&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256" || true
+}
+
 # secret_exists NAMESPACE NAME
 secret_exists() { kubectl -n "$1" get secret "$2" >/dev/null 2>&1; }
 
