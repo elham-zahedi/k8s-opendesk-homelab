@@ -144,4 +144,4 @@ run_playbook "$LOG" scale.yml -b --limit="$W_NAME"
 check "$W_NAME Ready" kubectl wait --for=condition=Ready "node/$W_NAME" --timeout=300s
 check_summary
 info "Next: ./06-add-worker/verify-worker.sh $W_NAME"
-info "Optional on Z01: a 'Host $W_NAME' entry in ~/.ssh/config (HostName $W_IP, User $ANSIBLE_USER)"
+info "Optional on jumphost: a 'Host $W_NAME' entry in ~/.ssh/config (HostName $W_IP, User $ANSIBLE_USER)"

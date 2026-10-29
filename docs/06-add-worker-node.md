@@ -29,7 +29,7 @@ pvesm status
 qm list
 ```
 
-**Result:** 10.240.0.27 does not answer, so the address is free. The host has 24 threads; with node6, the assigned vCPUs rise from 76 to 84. 112 GB RAM are available, netapp-hdd7tb-01 has 1.7 TiB free. `qm list` also shows a VM of another user; it is in a different network and does not conflict with node6.
+**Result:** 10.240.0.27 does not answer, so the address is free. The host has 24 threads; with node6, the assigned vCPUs rise from 76 to 84. 112 GB RAM are available, vm-storage has 1.7 TiB free. `qm list` also shows a VM of another user; it is in a different network and does not conflict with node6.
 
 **Conclusion:** RAM and storage are sufficient. The CPU is overcommitted, which is common for workers; keep an eye on the load with `kubectl top nodes`.
 
@@ -56,7 +56,7 @@ cp ~/kubespray/inventory/mycluster/inventory.ini ~/inventory.ini.vor-node6
 ### Step 1 – Clone, set the IP, start
 
 ```bash
-qm clone 9000 207 --name node6 --full --storage netapp-hdd7tb-01
+qm clone 9000 207 --name node6 --full --storage vm-storage
 qm set 207 --ipconfig0 ip=10.240.0.27/24,gw=10.240.0.1
 qm start 207
 qm config 207 | grep -E '^(name|cores|memory|ipconfig0|net0)'
@@ -141,7 +141,7 @@ ansible -i $INV node6 -b -m shell -a "apt-get update -qq && DEBIAN_FRONTEND=noni
 
 **Conclusion:** node6 runs a newer kernel than the other nodes (6.8.0-146), because cloud-init installed updates on the first boot. The package `linux-modules-extra` must match the running kernel; `$(uname -r)` takes care of that. Without `nls_utf8`, the SMB mounts of Nextcloud fail ([04](04-active-directory-sso.md), error F7).
 
-For access from Z01, a `Host node6` entry is added to `~/.ssh/config` (HostName 10.240.0.27, User k8s, IdentityFile `~/.ssh/k8s_ansible`). Check: `ssh node6 hostname`.
+For access from jumphost, a `Host node6` entry is added to `~/.ssh/config` (HostName 10.240.0.27, User k8s, IdentityFile `~/.ssh/k8s_ansible`). Check: `ssh node6 hostname`.
 
 ## 5. Join node6 to the cluster
 

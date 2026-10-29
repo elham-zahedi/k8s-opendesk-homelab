@@ -33,9 +33,9 @@ This document describes how the cloud-init template 9000 `ubuntu2404-k8s-tpl` wa
 
 ```mermaid
 flowchart TB
-    pc["Admin workstation"] -->|SSH| pve["Proxmox host server1<br/>192.168.1.201<br/>template 9000 / qm clone"]
-    pve --- net["SDN VNet vl5000<br/>10.240.0.0/24, MTU 1450"]
-    net --- z01["Z01 (VM 100)<br/>firewall / jump host<br/>10.240.0.226"]
+    pc["Admin workstation"] -->|SSH| pve["Proxmox host server1<br/>192.0.2.10<br/>template 9000 / qm clone"]
+    pve --- net["SDN VNet k8snet<br/>10.240.0.0/24, MTU 1450"]
+    net --- jumphost["jumphost (VM 100)<br/>firewall / jump host<br/>10.240.0.226"]
     net --- ks["kubespray (VM 104)<br/>Ansible, kubectl, Helm<br/>10.240.0.200"]
     net --- gw["Gateway / DNS<br/>10.240.0.1"]
     ks -->|SSH key k8s_ansible| nodes["master .21 – control plane + etcd<br/>node1–node5 .22–.26 – workers"]
@@ -43,7 +43,7 @@ flowchart TB
 
 ### 0.4 Conventions
 
-- Every step states where it runs (**Run on**). Always check the prompt, e.g. `root@server1`, `support@Z01` or `(kubespray-venv) k8s@kubespray:~/kubespray$`.
+- Every step states where it runs (**Run on**). Always check the prompt, e.g. `root@server1`, `jumpuser@jumphost` or `(kubespray-venv) k8s@kubespray:~/kubespray$`.
 - Paste heredoc blocks (`<<'EOF'`) completely at once. The closing `EOF` must stand alone on its line.
 - Run commands that open a new shell or session (`ssh …`, `tmux new …`) on their own and paste the following commands separately.
 - Lines like `calico_veth_mtu: 1400` are **configuration values**, not shell commands.
@@ -69,13 +69,13 @@ flowchart TB
 | Proxmox cluster | pve-cluster |
 | Node | server1 |
 | Proxmox VE kernel | 7.0.6-2-pve (Debian) |
-| Management IP | 192.168.1.201 (SSH as root, web UI on port 8006) |
-| VM storage | netapp-hdd7tb-01 (HDD storage) |
-| Backup storage | PBS-5Tib (Proxmox Backup Server) |
-| Network for the cluster VMs | SDN VNet vl5000 |
-| Related VMs on server1 | 100 Z01, 104 kubespray, 114 AD-DC, 115 FS |
+| Management IP | 192.0.2.10 (SSH as root, web UI on port 8006) |
+| VM storage | vm-storage |
+| Backup storage | pbs-backup (Proxmox Backup Server) |
+| Network for the cluster VMs | SDN VNet k8snet |
+| Related VMs on server1 | 100 jumphost, 104 kubespray, 114 AD-DC, 115 FS |
 
-### 1.2 Network vl5000
+### 1.2 Network k8snet
 
 | Parameter | Value |
 |---|---|
@@ -83,14 +83,14 @@ flowchart TB
 | Gateway | 10.240.0.1 |
 | DNS server | 10.240.0.1 |
 | MTU | 1450 (VXLAN-based SDN: 1500 minus 50 bytes of encapsulation) |
-| DHCP | Active (Z01 gets e.g. 10.240.0.226). Static IPs are outside the DHCP pool. |
+| DHCP | Active (jumphost gets e.g. 10.240.0.226). Static IPs are outside the DHCP pool. |
 | Static IPs | 10.240.0.21 – .26 (cluster), 10.240.0.200 (kubespray) |
 
-> **Important:** The Proxmox host itself has no IP in vl5000. SSH from the Proxmox host to 10.240.0.x therefore hangs (cancel with Ctrl+C). Access the VMs via Z01 or the kubespray VM.
+> **Important:** The Proxmox host itself has no IP in k8snet. SSH from the Proxmox host to 10.240.0.x therefore hangs (cancel with Ctrl+C). Access the VMs via jumphost or the kubespray VM.
 
 ## 2. Create the template
 
-**Run on:** Proxmox host `server1` as root (`ssh root@192.168.1.201`)
+**Run on:** Proxmox host `server1` as root (`ssh root@192.0.2.10`)
 
 ### 2.1 Download the cloud image
 
@@ -118,9 +118,9 @@ This way `qemu-guest-agent` and `chrony` are already present in every cloned VM.
 
 ```bash
 qm create 9000 --name ubuntu2404-k8s-tpl \
-  --cores 8 --sockets 1 --cpu host \
+  --cores 8 --sockets 1 --cpu x86-64-v3 \
   --memory 16384 --balloon 0 \
-  --net0 virtio,bridge=vl5000,mtu=1 \
+  --net0 virtio,bridge=k8snet,mtu=1 \
   --scsihw virtio-scsi-single --machine q35 \
   --ostype l26 --agent enabled=1
 ```
@@ -128,10 +128,10 @@ qm create 9000 --name ubuntu2404-k8s-tpl \
 | Parameter | Effect |
 |---|---|
 | `--cores 8 --sockets 1` | 8 vCPUs per node |
-| `--cpu host` | All CPU features of the host are passed through to the VM |
+| `--cpu x86-64-v3` | The same CPU features on every Proxmox host, so VMs can be live-migrated between hosts with different CPUs (section 4.7). `host` would pass every feature of the current host through |
 | `--memory 16384` | 16 GB RAM |
 | `--balloon 0` | No memory ballooning – Kubernetes does not cope well with fluctuating memory |
-| `bridge=vl5000,mtu=1` | Network vl5000; `mtu=1` inherits the MTU of the bridge (1450) |
+| `bridge=k8snet,mtu=1` | Network k8snet; `mtu=1` inherits the MTU of the bridge (1450) |
 | `--scsihw virtio-scsi-single` | One SCSI controller per disk, required for `iothread` |
 | `--machine q35` | Modern machine type (PCIe) |
 | `--agent enabled=1` | QEMU guest agent enabled (clean shutdown, IP shown in Proxmox) |
@@ -139,7 +139,7 @@ qm create 9000 --name ubuntu2404-k8s-tpl \
 ### 2.4 Import the disk and resize it to 120 GB
 
 ```bash
-qm set 9000 --scsi0 netapp-hdd7tb-01:0,import-from=/root/ubuntu-24.04-server-cloudimg-amd64.img,discard=on,iothread=1
+qm set 9000 --scsi0 vm-storage:0,import-from=/root/ubuntu-24.04-server-cloudimg-amd64.img,discard=on,iothread=1
 qm disk resize 9000 scsi0 120G
 ```
 
@@ -149,7 +149,7 @@ qm disk resize 9000 scsi0 120G
 ### 2.5 Cloud-init drive, boot order and console
 
 ```bash
-qm set 9000 --ide2 netapp-hdd7tb-01:cloudinit
+qm set 9000 --ide2 vm-storage:cloudinit
 qm set 9000 --boot order=scsi0
 qm set 9000 --serial0 socket --vga serial0
 ```
@@ -213,14 +213,14 @@ grep template /etc/pve/qemu-server/9000.conf     # expected: template: 1
 | Hardware | Value |
 |---|---|
 | Memory | 16.00 GiB [balloon=0] |
-| Processors | 8 (1 socket, 8 cores) [host] |
+| Processors | 8 (1 socket, 8 cores) [x86-64-v3] |
 | BIOS | Default (SeaBIOS) |
 | Display | Serial terminal 0 (serial0) |
 | Machine | q35 |
 | SCSI controller | VirtIO SCSI single |
-| CloudInit drive (ide2) | `netapp-hdd7tb-01:vm-9000-cloudinit,media=cdrom` |
-| Hard disk (scsi0) | `netapp-hdd7tb-01:vm-9000-disk-0,discard=on,iothread=1,size=120G` |
-| Network device (net0) | `virtio,bridge=vl5000,mtu=1` |
+| CloudInit drive (ide2) | `vm-storage:vm-9000-cloudinit,media=cdrom` |
+| Hard disk (scsi0) | `vm-storage:vm-9000-disk-0,discard=on,iothread=1,size=120G` |
+| Network device (net0) | `virtio,bridge=k8snet,mtu=1` |
 | Serial port (serial0) | socket |
 
 ### 4.2 Options
@@ -276,19 +276,55 @@ qm cloudinit dump 9000 network
 
 - **Change cloud-init values:** simply `qm set 9000 …` (e.g. new password, additional SSH key).
 - **Change the image or disk:** delete the template (`qm destroy 9000`) and repeat sections 2–3. Existing full clones are not affected.
-- **Clone from the template:** see [part 2](02-kubernetes-cluster-kubespray.md) (`qm clone 9000 <ID> --name <name> --full --storage netapp-hdd7tb-01`).
+- **Clone from the template:** see [part 2](02-kubernetes-cluster-kubespray.md) (`qm clone 9000 <ID> --name <name> --full --storage vm-storage`).
+
+### 4.7 CPU type and live migration
+
+The VMs use the CPU type `x86-64-v3` (`VM_CPU_TYPE` in `lab.env`), not `host`.
+
+**Why:** in a Proxmox cluster whose hosts have different CPUs, a VM with `host` sees the features of the host it is running on. A program reads them once when it starts. If the VM is then live-migrated to a host with an older CPU – for example during maintenance of the hosts – the program uses instructions that do not exist there. Java does this in compiled code: Keycloak crashed hours after such a migration with `SIGILL` in `StubRoutines::multiplyToLen` (instruction set `adx`). `x86-64-v3` gives every VM the same instruction set on every host (Intel since Haswell, AMD since Zen), so migration is safe in all directions.
+
+Check on a node: `grep -o -w -e aes -e avx2 -e adx /proc/cpuinfo | sort | uniq -c` shows `aes` and `avx2`, but no `adx`.
+
+**Changing the CPU type of running VMs:** one VM at a time. The new type only takes effect when Proxmox stops and starts the VM (`qm reboot`); a reboot inside the VM is not enough. About 10 minutes per node, openDesk stays available.
+
+**Run on:** kubespray VM as k8s
+
+```bash
+N=node1
+B=$(kubectl get node $N -o jsonpath='{.status.nodeInfo.bootID}')
+kubectl drain $N --ignore-daemonsets --delete-emptydir-data --timeout=15m
+```
+
+**Run on:** Proxmox host as root (VM ID of the node)
+
+```bash
+qm set 202 --cpu x86-64-v3 && qm reboot 202 && qm config 202 | grep ^cpu
+```
+
+**Run on:** kubespray VM as k8s
+
+```bash
+until kubectl get --raw=/readyz >/dev/null 2>&1; do sleep 5; done     # needed for the control plane
+until [ "$(kubectl get node $N -o jsonpath='{.status.nodeInfo.bootID}' 2>/dev/null)" != "$B" ]; do sleep 5; done
+kubectl wait --for=condition=Ready node/$N --timeout=10m
+kubectl uncordon $N
+kubectl -n longhorn-system get volumes.longhorn.io -o jsonpath='{range .items[*]}{.status.robustness}{"\n"}{end}' | sort | uniq -c
+```
+
+The new boot ID shows that the node really restarted. Wait until Longhorn only shows `healthy`, then continue with the next node; the control plane last. At the end the kubespray VM (`qm set 104 --cpu x86-64-v3 && qm reboot 104`) and the template (`qm set 9000 --cpu x86-64-v3`).
 
 ## 5. Access and keys
 
 | System | User | Login |
 |---|---|---|
-| Proxmox host server1 (192.168.1.201) | root | Existing root password (not documented here) |
+| Proxmox host server1 (192.0.2.10) | root | Existing root password (not documented here) |
 | All clones of template 9000 | k8s | Password only for the Proxmox console (kept in a password manager); SSH with key only; passwordless sudo |
 
 | Key | File on the Proxmox host | Purpose |
 |---|---|---|
 | `id_rsa` (root@Server1) | `/root/.ssh/id_rsa(.pub)` | Access from the Proxmox host |
-| `k8s_ansible` (ansible@k8s), ed25519 | `/root/.ssh/k8s_ansible(.pub)` | Main key for SSH and Ansible (copied to Z01 and kubespray) |
+| `k8s_ansible` (ansible@k8s), ed25519 | `/root/.ssh/k8s_ansible(.pub)` | Main key for SSH and Ansible (copied to jumphost and kubespray) |
 | Both public keys | `/root/k8s-keys.pub` | Input for `qm set 9000 --sshkeys` |
 
 Change the password in the template (applies to new clones):
@@ -303,18 +339,19 @@ qm set 9000 --cipassword '<NEW-PASSWORD>'
 
 | # | Problem / message | Cause | Solution |
 |---|---|---|---|
-| 1 | Network vl5000 has MTU 1450 | VXLAN SDN; cloud-init VMs would otherwise use MTU 1500 → large packets get lost | `qm set 9000 --net0 virtio,bridge=vl5000,mtu=1`; later `calico_veth_mtu: 1400` in Kubespray (part 2) |
+| 1 | Network k8snet has MTU 1450 | VXLAN SDN; cloud-init VMs would otherwise use MTU 1500 → large packets get lost | `qm set 9000 --net0 virtio,bridge=k8snet,mtu=1`; later `calico_veth_mtu: 1400` in Kubespray (part 2) |
 | 2 | `calico_veth_mtu:: command not found` | Configuration line typed into the Proxmox shell | Not a command; it goes into `k8s-net-calico.yml` in part 2 |
 | 3 | `cat: /root/.ssh/id_ed25519.pub: No such file` | The key on the Proxmox host is called `id_rsa` | Check with `ls /root/.ssh/`; use `id_rsa.pub` + `k8s_ansible.pub` |
 | 4 | `unable to parse value of 'sshkeys' – invalid urlencoded string` | Empty key file passed | Create the file with valid keys and repeat `qm set`; the follow-up warning is harmless |
 | 5 | Template name "ubuntu2404" instead of 26.04 | Ubuntu 24.04 image used | Kept on purpose: Python 3.12 works directly with ansible-core 2.19 |
 | 6 | chrony missing in the image | `virt-customize` was not run | Installed via Ansible in part 2; use `virt-customize` for future templates |
 | 7 | Password "none" in the cloud-init view | No password set at first | `--cipassword` set so that an emergency login via the console is possible |
+| 8 | Keycloak crashes with `SIGILL` in `StubRoutines::multiplyToLen`, hours after maintenance of the Proxmox hosts | The template had `--cpu host`; the VMs were live-migrated to a host with a newer CPU and back | CPU type `x86-64-v3` for template and VMs (section 4.7) |
 
 ### 6.2 Checklist
 
-- [x] 8 cores (host), 16 GB without ballooning, 120 GB on netapp-hdd7tb-01
-- [x] Network vl5000 with `mtu=1`
+- [x] 8 cores (CPU type x86-64-v3), 16 GB without ballooning, 120 GB on vm-storage
+- [x] Network k8snet with `mtu=1`
 - [x] Cloud-init: user k8s, console password, DNS 10.240.0.1, upgrade enabled
 - [x] SSH keys `root@Server1` and `ansible@k8s` visible in the dump
 - [x] QEMU guest agent enabled, boot from scsi0, serial console
