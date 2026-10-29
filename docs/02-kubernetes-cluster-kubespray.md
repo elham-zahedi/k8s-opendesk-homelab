@@ -108,7 +108,7 @@ GW=10.240.0.1
 i=0
 for name in master node1 node2 node3 node4 node5; do
   id=$((201 + i)); ip=10.240.0.$((21 + i))
-  qm clone 9000 $id --name $name --full --storage netapp-hdd7tb-01
+  qm clone 9000 $id --name $name --full --storage vm-storage
   qm set $id --ipconfig0 ip=$ip/24,gw=$GW
   qm start $id
   i=$((i + 1))
@@ -128,7 +128,7 @@ done
 | 205 | node4 | 10.240.0.25/24 | Worker | 8 / 16 GB / 120 GB |
 | 206 | node5 | 10.240.0.26/24 | Worker | 8 / 16 GB / 120 GB |
 
-Common to all 6 nodes: gateway and DNS 10.240.0.1, interface `eth0`, MTU 1450, user `k8s` (console password from the template), the same SSH keys, Ubuntu 24.04.5 LTS, storage netapp-hdd7tb-01.
+Common to all 6 nodes: gateway and DNS 10.240.0.1, interface `eth0`, MTU 1450, user `k8s` (console password from the template), the same SSH keys, Ubuntu 24.04.5 LTS, storage vm-storage.
 
 ### 1.3 Check and reboot
 
@@ -693,7 +693,7 @@ ansible -i inventory/mycluster/inventory.ini all -b -m shell -a "echo 'k8s:<NEW-
 
 ### 13.1 Backup
 
-- Back up all 6 cluster VMs and the kubespray VM to PBS-5Tib – a clean starting point.
+- Back up all 6 cluster VMs and the kubespray VM to pbs-backup – a clean starting point.
 - Do not delete the kubespray VM: the inventory, configuration and tools are needed for extensions and upgrades.
 - Back up etcd regularly:
 
@@ -707,7 +707,7 @@ ssh k8s@10.240.0.21 "sudo etcdctl --endpoints=https://10.240.0.21:2379 \
 
 ### 13.2 Add a worker (e.g. node6)
 
-- Proxmox: `qm clone 9000 207 --name node6 --full --storage netapp-hdd7tb-01`, `qm set 207 --ipconfig0 ip=10.240.0.27/24,gw=10.240.0.1`, `qm start 207`.
+- Proxmox: `qm clone 9000 207 --name node6 --full --storage vm-storage`, `qm set 207 --ipconfig0 ip=10.240.0.27/24,gw=10.240.0.1`, `qm start 207`.
 - Add node6 to the inventory under `[kube_node]` and redistribute the `/etc/hosts` block (section 4.3).
 - Reboot after the package upgrade, check chrony, then:
 

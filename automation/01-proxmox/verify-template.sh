@@ -2,7 +2,7 @@
 # 01 – Check that the cloud-init template has all settings from doc 01.
 # Read-only: changes nothing, safe to run at any time.
 #
-# Doc:     docs/01-proxmox-cloud-init-template.md (sections 3.3, 4 and 6.2)
+# Doc:     docs/01-proxmox-cloud-init-template.md (sections 3.3, 4, 4.7 and 6.2)
 # Run on:  Proxmox host as root
 # Usage:   ./verify-template.sh            (checks TEMPLATE_ID from lab.env)
 #          TEMPLATE_ID=9001 ./verify-template.sh
@@ -24,7 +24,8 @@ lacks() { ! grep -qE "$1" <<<"$CONF"; }
 
 step "Template $ID – hardware"
 check "${VM_CORES} cores"                 has "^cores: ${VM_CORES}$"
-check "CPU type host"                     has "^cpu: host$"
+CPU_TYPE="${VM_CPU_TYPE:-x86-64-v3}"      # not "host": live migration between different CPUs (section 4.7)
+check "CPU type ${CPU_TYPE}"              has "^cpu: ${CPU_TYPE}$"
 check "memory ${VM_MEMORY} MB"            has "^memory: ${VM_MEMORY}$"
 check "no ballooning (balloon: 0)"        has "^balloon: 0$"
 check "machine q35"                       has "^machine: q35"

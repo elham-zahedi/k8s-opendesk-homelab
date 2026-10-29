@@ -77,7 +77,7 @@ fi
 # ------------------------------------------------------------------------------
 step "3/6 Create VM $ID ($TEMPLATE_NAME)"
 run qm create "$ID" --name "$TEMPLATE_NAME" \
-  --cores "$VM_CORES" --sockets 1 --cpu host \
+  --cores "$VM_CORES" --sockets 1 --cpu "${VM_CPU_TYPE:-x86-64-v3}" \
   --memory "$VM_MEMORY" --balloon 0 \
   --net0 "virtio,bridge=$PVE_BRIDGE,mtu=1" \
   --scsihw virtio-scsi-single --machine q35 \

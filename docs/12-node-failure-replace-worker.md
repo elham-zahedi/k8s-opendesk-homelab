@@ -266,7 +266,7 @@ node6 gets a new VM with the same name and the same IP. So the inventory and `/e
 ```bash
 qm status 207; qm config 207 | grep ^name    # status: stopped, name: node6
 qm destroy 207 --purge
-qm clone 9000 207 --name node6 --full --storage netapp-hdd7tb-01
+qm clone 9000 207 --name node6 --full --storage vm-storage
 qm set 207 --ipconfig0 ip=10.240.0.27/24,gw=10.240.0.1
 qm start 207
 ```

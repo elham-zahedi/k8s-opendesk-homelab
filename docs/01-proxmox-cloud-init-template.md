@@ -70,8 +70,8 @@ flowchart TB
 | Node | server1 |
 | Proxmox VE kernel | 7.0.6-2-pve (Debian) |
 | Management IP | 192.0.2.10 (SSH as root, web UI on port 8006) |
-| VM storage | netapp-hdd7tb-01 (HDD storage) |
-| Backup storage | PBS-5Tib (Proxmox Backup Server) |
+| VM storage | vm-storage |
+| Backup storage | pbs-backup (Proxmox Backup Server) |
 | Network for the cluster VMs | SDN VNet k8snet |
 | Related VMs on server1 | 100 jumphost, 104 kubespray, 114 AD-DC, 115 FS |
 
@@ -118,7 +118,7 @@ This way `qemu-guest-agent` and `chrony` are already present in every cloned VM.
 
 ```bash
 qm create 9000 --name ubuntu2404-k8s-tpl \
-  --cores 8 --sockets 1 --cpu host \
+  --cores 8 --sockets 1 --cpu x86-64-v3 \
   --memory 16384 --balloon 0 \
   --net0 virtio,bridge=k8snet,mtu=1 \
   --scsihw virtio-scsi-single --machine q35 \
@@ -128,7 +128,7 @@ qm create 9000 --name ubuntu2404-k8s-tpl \
 | Parameter | Effect |
 |---|---|
 | `--cores 8 --sockets 1` | 8 vCPUs per node |
-| `--cpu host` | All CPU features of the host are passed through to the VM |
+| `--cpu x86-64-v3` | The same CPU features on every Proxmox host, so VMs can be live-migrated between hosts with different CPUs (section 4.7). `host` would pass every feature of the current host through |
 | `--memory 16384` | 16 GB RAM |
 | `--balloon 0` | No memory ballooning – Kubernetes does not cope well with fluctuating memory |
 | `bridge=k8snet,mtu=1` | Network k8snet; `mtu=1` inherits the MTU of the bridge (1450) |
@@ -139,7 +139,7 @@ qm create 9000 --name ubuntu2404-k8s-tpl \
 ### 2.4 Import the disk and resize it to 120 GB
 
 ```bash
-qm set 9000 --scsi0 netapp-hdd7tb-01:0,import-from=/root/ubuntu-24.04-server-cloudimg-amd64.img,discard=on,iothread=1
+qm set 9000 --scsi0 vm-storage:0,import-from=/root/ubuntu-24.04-server-cloudimg-amd64.img,discard=on,iothread=1
 qm disk resize 9000 scsi0 120G
 ```
 
@@ -149,7 +149,7 @@ qm disk resize 9000 scsi0 120G
 ### 2.5 Cloud-init drive, boot order and console
 
 ```bash
-qm set 9000 --ide2 netapp-hdd7tb-01:cloudinit
+qm set 9000 --ide2 vm-storage:cloudinit
 qm set 9000 --boot order=scsi0
 qm set 9000 --serial0 socket --vga serial0
 ```
@@ -213,13 +213,13 @@ grep template /etc/pve/qemu-server/9000.conf     # expected: template: 1
 | Hardware | Value |
 |---|---|
 | Memory | 16.00 GiB [balloon=0] |
-| Processors | 8 (1 socket, 8 cores) [host] |
+| Processors | 8 (1 socket, 8 cores) [x86-64-v3] |
 | BIOS | Default (SeaBIOS) |
 | Display | Serial terminal 0 (serial0) |
 | Machine | q35 |
 | SCSI controller | VirtIO SCSI single |
-| CloudInit drive (ide2) | `netapp-hdd7tb-01:vm-9000-cloudinit,media=cdrom` |
-| Hard disk (scsi0) | `netapp-hdd7tb-01:vm-9000-disk-0,discard=on,iothread=1,size=120G` |
+| CloudInit drive (ide2) | `vm-storage:vm-9000-cloudinit,media=cdrom` |
+| Hard disk (scsi0) | `vm-storage:vm-9000-disk-0,discard=on,iothread=1,size=120G` |
 | Network device (net0) | `virtio,bridge=k8snet,mtu=1` |
 | Serial port (serial0) | socket |
 
@@ -276,7 +276,43 @@ qm cloudinit dump 9000 network
 
 - **Change cloud-init values:** simply `qm set 9000 …` (e.g. new password, additional SSH key).
 - **Change the image or disk:** delete the template (`qm destroy 9000`) and repeat sections 2–3. Existing full clones are not affected.
-- **Clone from the template:** see [part 2](02-kubernetes-cluster-kubespray.md) (`qm clone 9000 <ID> --name <name> --full --storage netapp-hdd7tb-01`).
+- **Clone from the template:** see [part 2](02-kubernetes-cluster-kubespray.md) (`qm clone 9000 <ID> --name <name> --full --storage vm-storage`).
+
+### 4.7 CPU type and live migration
+
+The VMs use the CPU type `x86-64-v3` (`VM_CPU_TYPE` in `lab.env`), not `host`.
+
+**Why:** in a Proxmox cluster whose hosts have different CPUs, a VM with `host` sees the features of the host it is running on. A program reads them once when it starts. If the VM is then live-migrated to a host with an older CPU – for example during maintenance of the hosts – the program uses instructions that do not exist there. Java does this in compiled code: Keycloak crashed hours after such a migration with `SIGILL` in `StubRoutines::multiplyToLen` (instruction set `adx`). `x86-64-v3` gives every VM the same instruction set on every host (Intel since Haswell, AMD since Zen), so migration is safe in all directions.
+
+Check on a node: `grep -o -w -e aes -e avx2 -e adx /proc/cpuinfo | sort | uniq -c` shows `aes` and `avx2`, but no `adx`.
+
+**Changing the CPU type of running VMs:** one VM at a time. The new type only takes effect when Proxmox stops and starts the VM (`qm reboot`); a reboot inside the VM is not enough. About 10 minutes per node, openDesk stays available.
+
+**Run on:** kubespray VM as k8s
+
+```bash
+N=node1
+B=$(kubectl get node $N -o jsonpath='{.status.nodeInfo.bootID}')
+kubectl drain $N --ignore-daemonsets --delete-emptydir-data --timeout=15m
+```
+
+**Run on:** Proxmox host as root (VM ID of the node)
+
+```bash
+qm set 202 --cpu x86-64-v3 && qm reboot 202 && qm config 202 | grep ^cpu
+```
+
+**Run on:** kubespray VM as k8s
+
+```bash
+until kubectl get --raw=/readyz >/dev/null 2>&1; do sleep 5; done     # needed for the control plane
+until [ "$(kubectl get node $N -o jsonpath='{.status.nodeInfo.bootID}' 2>/dev/null)" != "$B" ]; do sleep 5; done
+kubectl wait --for=condition=Ready node/$N --timeout=10m
+kubectl uncordon $N
+kubectl -n longhorn-system get volumes.longhorn.io -o jsonpath='{range .items[*]}{.status.robustness}{"\n"}{end}' | sort | uniq -c
+```
+
+The new boot ID shows that the node really restarted. Wait until Longhorn only shows `healthy`, then continue with the next node; the control plane last. At the end the kubespray VM (`qm set 104 --cpu x86-64-v3 && qm reboot 104`) and the template (`qm set 9000 --cpu x86-64-v3`).
 
 ## 5. Access and keys
 
@@ -310,10 +346,11 @@ qm set 9000 --cipassword '<NEW-PASSWORD>'
 | 5 | Template name "ubuntu2404" instead of 26.04 | Ubuntu 24.04 image used | Kept on purpose: Python 3.12 works directly with ansible-core 2.19 |
 | 6 | chrony missing in the image | `virt-customize` was not run | Installed via Ansible in part 2; use `virt-customize` for future templates |
 | 7 | Password "none" in the cloud-init view | No password set at first | `--cipassword` set so that an emergency login via the console is possible |
+| 8 | Keycloak crashes with `SIGILL` in `StubRoutines::multiplyToLen`, hours after maintenance of the Proxmox hosts | The template had `--cpu host`; the VMs were live-migrated to a host with a newer CPU and back | CPU type `x86-64-v3` for template and VMs (section 4.7) |
 
 ### 6.2 Checklist
 
-- [x] 8 cores (host), 16 GB without ballooning, 120 GB on netapp-hdd7tb-01
+- [x] 8 cores (CPU type x86-64-v3), 16 GB without ballooning, 120 GB on vm-storage
 - [x] Network k8snet with `mtu=1`
 - [x] Cloud-init: user k8s, console password, DNS 10.240.0.1, upgrade enabled
 - [x] SSH keys `root@Server1` and `ansible@k8s` visible in the dump
