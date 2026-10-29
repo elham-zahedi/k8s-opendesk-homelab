@@ -11,7 +11,13 @@
 # 2. Groupware group: Nubus only adds a user to the group when the user object
 #    changes (doc 05, error F2). Users with isOxUser = true that are missing are
 #    added. No member is removed.
-# 3. Runs the checks for Nextcloud files (mount list NC_MOUNTS_CSV), SSO and – if
+# 3. Self-service of the portal: 04-identity/configure-selfservice.sh hides the menu
+#    entries for the openDesk password again and checks the profile fields (doc 04,
+#    section 19.6) – a rollout of "ums" resets both.
+# 4. Direct login: a rollout of "ums" also resets the redirect to the dedicated Keycloak
+#    (IDP_ENFORCE=yes). If the openDesk login form is back, the release
+#    opendesk-keycloak-bootstrap is rolled out again with helmfile sync (doc 04, 19.5).
+# 5. Runs the checks for Nextcloud files (mount list NC_MOUNTS_CSV), SSO and – if
 #    enabled – OX App Suite.
 
 # shellcheck source=../lib/common.sh
@@ -19,14 +25,15 @@ source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 
 parse_common_args "$@"
 load_env
-require_vars OPENDESK_NAMESPACE OPENDESK_DIR OPENDESK_ENV NUBUS_OU NUBUS_BASE_DN GROUPWARE_GROUP
+require_vars OPENDESK_NAMESPACE OPENDESK_DIR OPENDESK_ENV NUBUS_OU NUBUS_BASE_DN GROUPWARE_GROUP \
+             DOMAIN IDP_KEY MASTER_PASSWORD_FILE OPENDESK_CA_FILE
 identity_vars
 require_cmd jq curl yq
 use_kubectl
 VALUES="$OPENDESK_DIR/helmfile/environments/$OPENDESK_ENV/values.yaml.gotmpl"
 OX_ENABLED="$(yq '.apps.oxAppSuite.enabled // false' "$VALUES")"
 
-step "1/3 files_external in Nextcloud"
+step "1/5 files_external in Nextcloud"
 nextcloud_pod
 if occ app:list --output=json | jq -e '.enabled | has("files_external")' >/dev/null; then
   ok "files_external is enabled"
@@ -36,7 +43,7 @@ else
   [[ "$DRY_RUN" == 1 ]] || info "mounts: $(occ files_external:list --output=json | jq length)"
 fi
 
-step "2/3 Members of $GROUPWARE_GROUP"
+step "2/5 Members of $GROUPWARE_GROUP"
 if [[ "$OX_ENABLED" != true ]]; then
   info "OX App Suite is not enabled – skipped"
 else
@@ -61,11 +68,39 @@ else
   fi
 fi
 
-step "3/3 Checks"
+step "3/5 Self-service of the portal"
+results=()
+dry=(); [[ "$DRY_RUN" == 1 ]] && dry=(--dry-run)
+if "$AUTOMATION_DIR/04-identity/configure-selfservice.sh" "${dry[@]}"; then results+=("ok 04-identity/configure-selfservice.sh")
+else results+=("failed 04-identity/configure-selfservice.sh"); fi
+
+step "4/5 Direct login to $IDP_ALIAS (IDP_ENFORCE=$IDP_ENFORCE)"
+straight() { grep -q "/broker/$IDP_ALIAS/login" <<<"$(portal_login_redirect)"; }
+if [[ "$IDP_ENFORCE" != yes ]]; then
+  info "IDP_ENFORCE is not yes – the openDesk login form stays"
+elif straight; then
+  ok "the login of the portal goes straight to $IDP_ALIAS"
+else
+  warn "the openDesk login form is back (a rollout of ums resets it) – rolling out opendesk-keycloak-bootstrap again"
+  info "\$ helmfile -e $OPENDESK_ENV -l name=opendesk-keycloak-bootstrap sync -n $OPENDESK_NAMESPACE"
+  if [[ "$DRY_RUN" != 1 ]]; then
+    require_cmd helmfile
+    log="$(mktemp)"; add_exit_hook "rm -f $log"
+    # helmfile sync also runs a release whose values did not change (apply would skip it)
+    if ! ( cd "$OPENDESK_DIR" && MASTER_PASSWORD="$(cat "$MASTER_PASSWORD_FILE")" \
+           helmfile -e "$OPENDESK_ENV" -l name=opendesk-keycloak-bootstrap sync -n "$OPENDESK_NAMESPACE" ) >"$log" 2>&1; then
+      tail -n 20 "$log" | indent '    '; die "helmfile sync of opendesk-keycloak-bootstrap failed"
+    fi
+    info "waiting for the bootstrap job (about 3 minutes, at most 10)"
+    for _ in $(seq 60); do straight && break; sleep 10; done
+    check "the login of the portal goes straight to $IDP_ALIAS again" straight
+  fi
+fi
+
+step "5/5 Checks"
 [[ "$DRY_RUN" == 1 ]] && { info "skipped with --dry-run"; exit 0; }
 scripts=(04-identity/verify-nextcloud-files.sh 04-identity/verify-sso.sh)
 [[ "$OX_ENABLED" == true ]] && scripts+=(05-ox/verify-ox.sh)
-results=()
 for s in "${scripts[@]}"; do
   echo; info "────── $s"
   if "$AUTOMATION_DIR/$s"; then results+=("ok $s"); else results+=("failed $s"); fi
