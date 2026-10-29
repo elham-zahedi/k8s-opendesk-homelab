@@ -1,0 +1,28 @@
+# Self-service of the portal for accounts from AD (doc 04, section 19.6).
+# The password lives in AD: changing or resetting the (unused) openDesk password is
+# switched off, and the profile only offers the photo – name and e-mail come from AD.
+# Added to customization.release.ums by configure-selfservice.sh; takes effect with the
+# next rollout of the release "ums".
+global:
+  configUcr:
+    # Nubus also keeps its own default for this key in the same ConfigMap. The flat key
+    # is rendered after it and wins; configure-selfservice.sh checks the running value.
+    "self-service/udm_attributes": "jpegPhoto"
+    self-service:
+      udm_attributes: "jpegPhoto"
+      ldap_attributes: "jpegPhoto"
+    umc:
+      self-service:
+        passwordchange:
+          frontend:
+            enabled: "no"
+        passwordreset:
+          frontend:
+            enabled: "no"
+          backend:
+            enabled: "false"
+        protect-account:
+          frontend:
+            enabled: "no"
+          backend:
+            enabled: "false"
