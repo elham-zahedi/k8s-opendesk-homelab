@@ -7,7 +7,7 @@
 | Scope | From six cloned VMs to a working Kubernetes cluster |
 | Prerequisite | [01](01-proxmox-cloud-init-template.md): template 9000 `ubuntu2404-k8s-tpl` exists |
 | Date | 07.10.2026 |
-| Network | SDN VNet vl5000 · 10.240.0.0/24 · MTU 1450 |
+| Network | SDN VNet k8snet · 10.240.0.0/24 · MTU 1450 |
 | Status | Installed and tested (including a full reboot test) – all tests passed |
 
 > **Note:** Passwords from the original documentation have been replaced with placeholders.
@@ -22,9 +22,9 @@ This document describes how six VMs were cloned from template 9000 and turned in
 
 ```mermaid
 flowchart TB
-    pc["Admin workstation"] -->|SSH| pve["Proxmox host server1<br/>192.168.1.201<br/>template 9000 / qm clone"]
-    pve --- net["SDN VNet vl5000<br/>10.240.0.0/24, MTU 1450"]
-    net --- z01["Z01 (VM 100)<br/>firewall / jump host<br/>10.240.0.226"]
+    pc["Admin workstation"] -->|SSH| pve["Proxmox host server1<br/>192.0.2.10<br/>template 9000 / qm clone"]
+    pve --- net["SDN VNet k8snet<br/>10.240.0.0/24, MTU 1450"]
+    net --- jumphost["jumphost (VM 100)<br/>firewall / jump host<br/>10.240.0.226"]
     net --- ks["kubespray (VM 104)<br/>Ansible, kubectl, Helm<br/>10.240.0.200"]
     net --- gw["Gateway / DNS<br/>10.240.0.1"]
     ks -->|SSH key k8s_ansible| master["master .21<br/>control plane + etcd"]
@@ -35,8 +35,8 @@ flowchart TB
 
 | Machine | VM ID | IP | Role |
 |---|---|---|---|
-| Proxmox host server1 | – | 192.168.1.201 | Hypervisor; clones the VMs. No IP in vl5000. |
-| Z01 | 100 | 10.240.0.226 (DHCP), 192.168.1.215 | Firewall/admin VM; jump host into 10.240.0.x. Not used for Kubespray. |
+| Proxmox host server1 | – | 192.0.2.10 | Hypervisor; clones the VMs. No IP in k8snet. |
+| jumphost | 100 | 10.240.0.226 (DHCP), 192.0.2.15 | Firewall/admin VM; jump host into 10.240.0.x. Not used for Kubespray. |
 | kubespray | 104 | 10.240.0.200 | Control machine: Kubespray/Ansible, kubectl, Helm. Not part of the cluster. |
 | master | 201 | 10.240.0.21 | Control plane (API server, scheduler, controller manager) + etcd |
 | node1 – node5 | 202 – 206 | 10.240.0.22 – .26 | Workers: the application pods run here |
@@ -56,7 +56,7 @@ flowchart TB
 | Service network / pod network | 10.233.0.0/18 / 10.233.64.0/18 |
 | Cluster domain | cluster.local |
 
-### 0.4 Network vl5000
+### 0.4 Network k8snet
 
 | Parameter | Value |
 |---|---|
@@ -64,20 +64,20 @@ flowchart TB
 | Gateway | 10.240.0.1 |
 | DNS server | 10.240.0.1 |
 | MTU | 1450 (VXLAN-based SDN: 1500 minus 50 bytes of encapsulation) |
-| DHCP | Active (Z01 gets e.g. 10.240.0.226). Static IPs are outside the DHCP pool. |
+| DHCP | Active (jumphost gets e.g. 10.240.0.226). Static IPs are outside the DHCP pool. |
 | Static IPs | 10.240.0.21 – .26 (cluster), 10.240.0.200 (kubespray) |
 
 ### 0.5 Conventions
 
-Same conventions as in [01](01-proxmox-cloud-init-template.md#04-conventions). Most importantly: every step states where it runs (**Run on**), so always check the prompt – e.g. `root@server1`, `support@Z01` or `(kubespray-venv) k8s@kubespray:~/kubespray$`. Everything between `<` and `>` is a placeholder.
+Same conventions as in [01](01-proxmox-cloud-init-template.md#04-conventions). Most importantly: every step states where it runs (**Run on**), so always check the prompt – e.g. `root@server1`, `jumpuser@jumphost` or `(kubespray-venv) k8s@kubespray:~/kubespray$`. Everything between `<` and `>` is a placeholder.
 
 ### 0.6 Steps
 
 | Section | Topic | Run on |
 |---|---|---|
-| 1 | Clone and check the 6 nodes | Proxmox host, then Z01 |
-| 2 | Set up SSH access | Z01 (support) |
-| 3 | Prepare the kubespray VM | Z01, then kubespray (k8s) |
+| 1 | Clone and check the 6 nodes | Proxmox host, then jumphost |
+| 2 | Set up SSH access | jumphost (jumpuser) |
+| 3 | Prepare the kubespray VM | jumphost, then kubespray (k8s) |
 | 4 | Inventory and node preparation | kubespray (k8s) |
 | 5 | Cluster configuration | kubespray (k8s) |
 | 6 | Run the installation | kubespray (k8s), in tmux |
@@ -108,7 +108,7 @@ GW=10.240.0.1
 i=0
 for name in master node1 node2 node3 node4 node5; do
   id=$((201 + i)); ip=10.240.0.$((21 + i))
-  qm clone 9000 $id --name $name --full --storage netapp-hdd7tb-01
+  qm clone 9000 $id --name $name --full --storage vm-storage
   qm set $id --ipconfig0 ip=$ip/24,gw=$GW
   qm start $id
   i=$((i + 1))
@@ -128,11 +128,11 @@ done
 | 205 | node4 | 10.240.0.25/24 | Worker | 8 / 16 GB / 120 GB |
 | 206 | node5 | 10.240.0.26/24 | Worker | 8 / 16 GB / 120 GB |
 
-Common to all 6 nodes: gateway and DNS 10.240.0.1, interface `eth0`, MTU 1450, user `k8s` (console password from the template), the same SSH keys, Ubuntu 24.04.5 LTS, storage netapp-hdd7tb-01.
+Common to all 6 nodes: gateway and DNS 10.240.0.1, interface `eth0`, MTU 1450, user `k8s` (console password from the template), the same SSH keys, Ubuntu 24.04.5 LTS, storage vm-storage.
 
 ### 1.3 Check and reboot
 
-**Run on:** Z01 as support (after section 2)
+**Run on:** jumphost as jumpuser (after section 2)
 
 ```bash
 for i in 21 22 23 24 25 26; do
@@ -155,23 +155,23 @@ Optional MTU test on one VM (1422 + 28 bytes of headers = 1450): `ping -c 1 -M d
 
 ## 2. Set up SSH access
 
-The VMs only accept logins with an SSH key. Access goes through Z01, which is connected to vl5000.
+The VMs only accept logins with an SSH key. Access goes through jumphost, which is connected to k8snet.
 
-**Run on:** Z01 as support
+**Run on:** jumphost as jumpuser
 
-### 2.1 Copy the Ansible key to Z01
+### 2.1 Copy the Ansible key to jumphost
 
 ```bash
-scp root@192.168.1.201:/root/.ssh/k8s_ansible ~/.ssh/k8s_ansible
+scp root@192.0.2.10:/root/.ssh/k8s_ansible ~/.ssh/k8s_ansible
 chmod 600 ~/.ssh/k8s_ansible
 ssh -i ~/.ssh/k8s_ansible k8s@10.240.0.21
 ```
 
-### 2.2 SSH configuration on Z01
+### 2.2 SSH configuration on jumphost
 
-> **Important:** Create this file on Z01 – not inside an open SSH session on the master. The prompt must be `support@Z01`.
+> **Important:** Create this file on jumphost – not inside an open SSH session on the master. The prompt must be `jumpuser@jumphost`.
 
-Content of `~/.ssh/config` on Z01 (older entries with `User ansible` were changed to `User k8s`):
+Content of `~/.ssh/config` on jumphost (older entries with `User ansible` were changed to `User k8s`):
 
 ```
 Host master
@@ -204,15 +204,15 @@ ssh node5 hostname         # expected: node5
 
 | From | To | Command |
 |---|---|---|
-| Admin workstation | Proxmox host | `ssh root@192.168.1.201` |
-| Z01 | Nodes | `ssh master` … `ssh node5` |
-| Z01 | kubespray | `ssh 10.240.0.200` |
+| Admin workstation | Proxmox host | `ssh root@192.0.2.10` |
+| jumphost | Nodes | `ssh master` … `ssh node5` |
+| jumphost | kubespray | `ssh 10.240.0.200` |
 | kubespray | Nodes | `ssh k8s@10.240.0.21` … `.26` (key `~/.ssh/id_ed25519`) |
 | Emergency (network broken) | Any VM | Proxmox web UI → VM → Console, user `k8s`, console password |
 
 ## 3. Prepare the kubespray VM
 
-Kubespray runs on its own VM (VM 104 `kubespray`, 10.240.0.200) – not on the master and not on Z01 (the firewall VM). This keeps the tooling separate from the cluster, keeps the master free, and makes it possible to repair the cluster from here if the master fails.
+Kubespray runs on its own VM (VM 104 `kubespray`, 10.240.0.200) – not on the master and not on jumphost (the firewall VM). This keeps the tooling separate from the cluster, keeps the master free, and makes it possible to repair the cluster from here if the master fails.
 
 | Property | Value |
 |---|---|
@@ -229,7 +229,7 @@ Kubespray runs on its own VM (VM 104 `kubespray`, 10.240.0.200) – not on the m
 
 ### 3.1 Copy the SSH key to the kubespray VM
 
-**Run on:** Z01 as support
+**Run on:** jumphost as jumpuser
 
 ```bash
 scp ~/.ssh/k8s_ansible 10.240.0.200:~/.ssh/id_ed25519
@@ -590,8 +590,8 @@ In the first 1–2 minutes after the reboot, these states are normal:
 
 | System | Address | User | Login |
 |---|---|---|---|
-| Proxmox host server1 | 192.168.1.201 (SSH, web UI :8006) | root | Existing root password (not documented here) |
-| Z01 | 10.240.0.226 / 192.168.1.215 | support | Existing password (not documented here) |
+| Proxmox host server1 | 192.0.2.10 (SSH, web UI :8006) | root | Existing root password (not documented here) |
+| jumphost | 10.240.0.226 / 192.0.2.15 | jumpuser | Existing password (not documented here) |
 | kubespray (VM 104) | 10.240.0.200 | k8s | SSH key; passwordless sudo |
 | master, node1–node5 | 10.240.0.21 – .26 | k8s | Console password only (Proxmox console); SSH with key only; passwordless sudo |
 | Kubernetes API | https://10.240.0.21:6443 | kubernetes-admin | Certificate in `~/.kube/config` on kubespray |
@@ -603,13 +603,13 @@ All six cluster VMs share the same credentials because they come from template 9
 | Key | Location (private) | Deployed on | Purpose |
 |---|---|---|---|
 | `id_rsa` (root@Server1) | Proxmox: `/root/.ssh/id_rsa` | All cluster VMs | Access from the Proxmox host |
-| `k8s_ansible` (ansible@k8s), ed25519 | Proxmox: `/root/.ssh/k8s_ansible`<br>Z01: `~/.ssh/k8s_ansible`<br>kubespray: `~/.ssh/id_ed25519` | All cluster VMs | Main key for SSH and Ansible |
+| `k8s_ansible` (ansible@k8s), ed25519 | Proxmox: `/root/.ssh/k8s_ansible`<br>jumphost: `~/.ssh/k8s_ansible`<br>kubespray: `~/.ssh/id_ed25519` | All cluster VMs | Main key for SSH and Ansible |
 
 ### 10.3 Important files
 
 | File | Machine | Content |
 |---|---|---|
-| `~/.ssh/config` | Z01 | Short names master … node5, user k8s |
+| `~/.ssh/config` | jumphost | Short names master … node5, user k8s |
 | `~/kubespray/inventory/mycluster/inventory.ini` | kubespray | Inventory of the 6 nodes |
 | `~/kubespray/inventory/mycluster/group_vars/` | kubespray | Cluster settings |
 | `~/kubespray/inventory/mycluster/artifacts/admin.conf` | kubespray | Admin kubeconfig (original) |
@@ -637,7 +637,7 @@ ansible -i inventory/mycluster/inventory.ini all -b -m shell -a "echo 'k8s:<NEW-
 | Platform | VMware, VMs installed manually | Proxmox, 6 full clones from template 9000 |
 | Cluster size | 1 master + 2 workers | 1 master + 5 workers |
 | Operating system | Ubuntu 26.04 (Python 3.14, `uv` needed) | Ubuntu 24.04.5 (Python 3.12, no `uv`) |
-| Network | VMware NAT 192.168.147.0/24, MTU 1500 | SDN vl5000 10.240.0.0/24, MTU 1450, Calico MTU 1400 |
+| Network | VMware NAT 192.168.147.0/24, MTU 1500 | SDN k8snet 10.240.0.0/24, MTU 1450, Calico MTU 1400 |
 | Ansible user | `ansible` (created manually) | `k8s` (cloud-init) |
 | Control machine | master | Dedicated VM kubespray (10.240.0.200) |
 | kubectl | On the master, `admin.conf` copied manually | On kubespray via `kubeconfig_localhost` / `kubectl_localhost` |
@@ -648,12 +648,12 @@ ansible -i inventory/mycluster/inventory.ini all -b -m shell -a "echo 'k8s:<NEW-
 
 | # | Problem / message | Cause | Solution |
 |---|---|---|---|
-| 1 | SSH from the Proxmox host to 10.240.0.21 hangs | The Proxmox host has no IP in vl5000 | Ctrl+C; access via Z01 or kubespray |
-| 2 | `Permission denied (publickey)` from Z01 | Z01's key not deployed on the VMs | Copied key `k8s_ansible` from the Proxmox host to Z01 |
-| 3 | `~/.ssh/config` accidentally created on the master | Command run inside an open SSH session | Deleted on the master, recreated on Z01; always check the prompt |
-| 4 | Old entries with `User ansible` in `~/.ssh/config` on Z01 | Leftovers from an earlier environment | `sed -i 's/User ansible/User k8s/' ~/.ssh/config` |
+| 1 | SSH from the Proxmox host to 10.240.0.21 hangs | The Proxmox host has no IP in k8snet | Ctrl+C; access via jumphost or kubespray |
+| 2 | `Permission denied (publickey)` from jumphost | jumphost's key not deployed on the VMs | Copied key `k8s_ansible` from the Proxmox host to jumphost |
+| 3 | `~/.ssh/config` accidentally created on the master | Command run inside an open SSH session | Deleted on the master, recreated on jumphost; always check the prompt |
+| 4 | Old entries with `User ansible` in `~/.ssh/config` on jumphost | Leftovers from an earlier environment | `sed -i 's/User ansible/User k8s/' ~/.ssh/config` |
 | 5 | "System restart required" / "Pending kernel upgrade" | Package upgrade by cloud-init on first boot | All nodes and the kubespray VM rebooted once |
-| 6 | Z01 unsuitable as control machine | Z01 is the firewall VM | Created a dedicated VM 104 kubespray |
+| 6 | jumphost unsuitable as control machine | jumphost is the firewall VM | Created a dedicated VM 104 kubespray |
 | 7 | `/etc/hosts` would be overwritten after a reboot | Proxmox cloud-init manages `/etc/hosts` | Entries also added to `/etc/cloud/templates/hosts.debian.tmpl` |
 | 8 | chrony missing on the nodes | Not baked into the image | Installed via Ansible apt (replaces systemd-timesyncd) |
 | 9 | MTU 1450 in the network | VXLAN SDN | `calico_veth_mtu: 1400`; MTU test in the pod network passed |
@@ -693,7 +693,7 @@ ansible -i inventory/mycluster/inventory.ini all -b -m shell -a "echo 'k8s:<NEW-
 
 ### 13.1 Backup
 
-- Back up all 6 cluster VMs and the kubespray VM to PBS-5Tib – a clean starting point.
+- Back up all 6 cluster VMs and the kubespray VM to pbs-backup – a clean starting point.
 - Do not delete the kubespray VM: the inventory, configuration and tools are needed for extensions and upgrades.
 - Back up etcd regularly:
 
@@ -707,7 +707,7 @@ ssh k8s@10.240.0.21 "sudo etcdctl --endpoints=https://10.240.0.21:2379 \
 
 ### 13.2 Add a worker (e.g. node6)
 
-- Proxmox: `qm clone 9000 207 --name node6 --full --storage netapp-hdd7tb-01`, `qm set 207 --ipconfig0 ip=10.240.0.27/24,gw=10.240.0.1`, `qm start 207`.
+- Proxmox: `qm clone 9000 207 --name node6 --full --storage vm-storage`, `qm set 207 --ipconfig0 ip=10.240.0.27/24,gw=10.240.0.1`, `qm start 207`.
 - Add node6 to the inventory under `[kube_node]` and redistribute the `/etc/hosts` block (section 4.3).
 - Reboot after the package upgrade, check chrony, then:
 
@@ -745,7 +745,7 @@ ansible-playbook -i inventory/mycluster/inventory.ini -b upgrade-cluster.yml
 ### 13.6 Final checklist
 
 - [x] 6 nodes cloned, hostname/IP/MTU 1450 checked, rebooted
-- [x] SSH from Z01 and kubespray without a password
+- [x] SSH from jumphost and kubespray without a password
 - [x] Kubespray v2.32.0 with ansible-core 2.19.14 on the kubespray VM
 - [x] `/etc/hosts` persistent, chrony synchronized, no swap
 - [x] Installation: `failed=0` on all nodes

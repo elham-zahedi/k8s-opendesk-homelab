@@ -266,7 +266,7 @@ node6 gets a new VM with the same name and the same IP. So the inventory and `/e
 ```bash
 qm status 207; qm config 207 | grep ^name    # status: stopped, name: node6
 qm destroy 207 --purge
-qm clone 9000 207 --name node6 --full --storage netapp-hdd7tb-01
+qm clone 9000 207 --name node6 --full --storage vm-storage
 qm set 207 --ipconfig0 ip=10.240.0.27/24,gw=10.240.0.1
 qm start 207
 ```
@@ -288,7 +288,7 @@ grep '^node6 ' ~/kubespray/inventory/mycluster/inventory.ini
 
 **Result:** `reboot required`; after the reboot, kernel 6.8.0-147 is running. node6 is still in the inventory.
 
-**Conclusion:** the new VM has a new SSH host key. Without `ssh-keygen -R`, SSH warns with `REMOTE HOST IDENTIFICATION HAS CHANGED`, just like during an attack. Do the same on Z01. `accept-new` accepts new keys without asking, but rejects changed ones.
+**Conclusion:** the new VM has a new SSH host key. Without `ssh-keygen -R`, SSH warns with `REMOTE HOST IDENTIFICATION HAS CHANGED`, just like during an attack. Do the same on jumphost. `accept-new` accepts new keys without asking, but rejects changed ones.
 
 ### Step 3 – Preparation and join
 

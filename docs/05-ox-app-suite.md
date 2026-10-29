@@ -10,7 +10,7 @@ OX App Suite has been active since 14.10.2026: all 500 AD users have email under
 | Prerequisite | [01](01-proxmox-cloud-init-template.md) – [03](03-opendesk-deployment.md): template, cluster, openDesk v1.17.2; [04](04-active-directory-sso.md): AD integration with Directory Importer and Keycloak idp.k8s.lab |
 | Date | 14.10.2026, 08:00 – 10:40 CEST (assessment on 13.10.2026) |
 | openDesk version | v1.17.2 (namespace `opendesk`, environment `dev`) |
-| Network | SDN VNet vl5000 · 10.240.0.0/24 · MTU 1450 |
+| Network | SDN VNet k8snet · 10.240.0.0/24 · MTU 1450 |
 | Status | Enabled and accepted – mail, calendar invitation and address book work between two AD accounts |
 
 > **Important:** This document contains no passwords. Never copy output that contains passwords or tokens into a chat, a ticket or a log.
@@ -114,7 +114,7 @@ All paths except login and import stay inside the cluster. The browser reaches w
 ### 0.7 Conventions
 
 - The conventions from [04](04-active-directory-sso.md), section 0.7, apply.
-- All commands run on the kubespray VM. From Z01, log in with `ssh 10.240.0.200` **without** a user name (error F1). Check the prompt: `(kubespray-venv) k8s@kubespray:~$`.
+- All commands run on the kubespray VM. From jumphost, log in with `ssh 10.240.0.200` **without** a user name (error F1). Check the prompt: `(kubespray-venv) k8s@kubespray:~$`.
 - Queries to Nubus go through the helper pod `udmcli` (section 2.1). It holds the Nubus password only as an environment variable.
 - Linux times are UTC (07:30 UTC = 09:30 CEST).
 
@@ -384,7 +384,7 @@ echo "${#MASTER_PASSWORD}"             # 44
 helmfile -e dev apply -n opendesk --suppress-diff 2>&1 | tee ~/opendesk-apply-ox.log
 ```
 
-Watch in a second SSH session (from Z01: `ssh 10.240.0.200`):
+Watch in a second SSH session (from jumphost: `ssh 10.240.0.200`):
 
 ```bash
 watch -n 10 'kubectl -n opendesk get pods | grep -vE "Running|Completed"'
@@ -750,7 +750,7 @@ Five errors occurred on 13 and 14.10.2026; F2 and F3 affect every future rollout
 
 | # | Problem / message | Cause | Solution |
 |---|---|---|---|
-| F1 | Z01: `cd ~/kubespray` → "No such file or directory"; `ssh support@10.240.0.21` → "Permission denied (publickey)" | Commands run on Z01 instead of the kubespray VM; the user `support` does not exist on the nodes; a user given on the command line overrides `User k8s` from `~/.ssh/config` | From Z01 use `ssh 10.240.0.200` without a user name; check the prompt `(kubespray-venv) k8s@kubespray` |
+| F1 | jumphost: `cd ~/kubespray` → "No such file or directory"; `ssh jumpuser@10.240.0.21` → "Permission denied (publickey)" | Commands run on jumphost instead of the kubespray VM; the user `jumpuser` does not exist on the nodes; a user given on the command line overrides `User k8s` from `~/.ssh/config` | From jumphost use `ssh 10.240.0.200` without a user name; check the prompt `(kubespray-venv) k8s@kubespray` |
 | F2 | managed-by-attribute-Groupware: 0 members, before and after the rollout | The group is only created with OX; Nubus only adds members when a user object changes | Mechanism checked on one account, group set once to all 500 users with `isOxUser = true` (section 8) |
 | F3 | After the rollout "files_external NOT active"; nc-mounts.sh shows PLAN instead of SKIP and "There are no commands defined in the "files_external" namespace" | The job opendesk-nextcloud-management ran during the rollout and switches off apps outside its list | `occ app:enable files_external`; mounts and options are kept (section 7); repeat after every rollout |
 | F4 | Expected values in the guide did not match: "about 60 releases", host "mail.k8s.lab" | 60 is the number of all possible releases; the OX host is called webmail | Corrected in this document: 23 and 26 releases, webmail.k8s.lab |

@@ -6,7 +6,7 @@
 # Usage:   ./export-ca.sh            writes ~/opendesk-ca.crt
 #
 # Prints the SHA1 fingerprint and the Windows thumbprint. Then copy the file to the
-# workstation (e.g. via Z01) and run windows/import-ca.ps1 with that thumbprint.
+# workstation (e.g. via jumphost) and run windows/import-ca.ps1 with that thumbprint.
 # The CA is public – it contains no secret.
 
 # shellcheck source=../lib/common.sh
