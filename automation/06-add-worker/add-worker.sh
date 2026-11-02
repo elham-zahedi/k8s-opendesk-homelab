@@ -142,6 +142,7 @@ fi
 confirm "Join $W_NAME to the cluster now (scale.yml, about 4 minutes)?" || die "aborted"
 run_playbook "$LOG" scale.yml -b --limit="$W_NAME"
 check "$W_NAME Ready" kubectl wait --for=condition=Ready "node/$W_NAME" --timeout=300s
+label_workers    # ROLES "worker" in kubectl get nodes (doc 13, section 10)
 check_summary
 info "Next: ./06-add-worker/verify-worker.sh $W_NAME"
 info "Optional on jumphost: a 'Host $W_NAME' entry in ~/.ssh/config (HostName $W_IP, User $ANSIBLE_USER)"

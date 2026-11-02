@@ -17,7 +17,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 ALLOWED_FLAGS="force"
 parse_common_args "$@"
 load_env
-require_vars INVENTORY_NAME KUBECONFIG_PATH
+require_vars INVENTORY_NAME KUBECONFIG_PATH NODES
 use_kubespray
 ART="$INV_DIR/artifacts"
 [[ -f "$ART/admin.conf" && -f "$ART/kubectl" ]] || [[ "$DRY_RUN" == 1 ]] \
@@ -42,9 +42,11 @@ else
   run install -m 600 "$ART/admin.conf" "$KUBECONFIG_PATH"
 fi
 
-step "3/3 First check"
+step "3/3 First check and role label of the workers"
 if [[ "$DRY_RUN" != 1 ]]; then
   info "$(grep -m1 'server:' "$KUBECONFIG_PATH" | xargs)"
-  kubectl --kubeconfig "$KUBECONFIG_PATH" get nodes -o wide | sed 's/^/  /'
+  use_kubectl
+  label_workers    # Kubernetes only labels the control plane; ROLES shows <none> otherwise
+  kubectl get nodes -o wide | sed 's/^/  /'
 fi
 info "Next: ./02-kubespray/verify-cluster.sh"

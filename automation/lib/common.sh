@@ -38,11 +38,14 @@ run_masked() {
 }
 
 # load_env – reads automation/lab.env (or the file given in $LAB_ENV)
+# NODES_ONLY="name:vmid:ip:role …" limits one run to these nodes. Unlike NODES="…" on
+# the command line it also works when lab.env sets NODES without ${NODES:-…}.
 load_env() {
-  local f="${LAB_ENV:-$AUTOMATION_DIR/lab.env}"
+  local f="${LAB_ENV:-$AUTOMATION_DIR/lab.env}" only="${NODES_ONLY:-}"
   [[ -f "$f" ]] || die "$f not found – run: cp lab.env.example lab.env, then adjust lab.env"
   # shellcheck source=/dev/null
   source "$f"
+  if [[ -n "$only" ]]; then NODES="$only"; fi
 }
 
 require_root() {
@@ -401,6 +404,38 @@ groupware_state() {
   GW_MISSING="$(jq length <<<"$GW_MISSING_DNS")"
 }
 
+# ---- OX access profiles (doc 05, section 12.3 – error F6)
+OX_ACCESS_FILE="/var/lib/univention-appcenter/apps/ox-connector/data/ModuleAccessDefinitions.properties"
+# ox_access_state – compares the access profiles (oxAccess) of the users with
+# isOxUser = true with the profiles the OX Connector knows, and reads its log of the
+# last 7 days (needs udm_connect). The connector applies a profile only while it
+# processes a user; a user processed while the profile was unknown keeps only mail and
+# contacts in OX ("Cannot find access profile … Leaving access rights untouched").
+# reapply-ox-access.sh changes oxAccess to "none" and back, which logs the same warning
+# for "none" – warnings before the last such line count as fixed.
+# Sets OX_PROFILES_USED, OX_PROFILES_KNOWN, OX_PROFILES_MISSING (space-separated),
+# OX_PROFILE_WARNINGS (open warnings) and OX_PROFILE_WARNING_LAST (time of the last one, or -).
+ox_access_state() {
+  local p
+  udm GET "users/user/?position=$(urlencode "ou=$NUBUS_OU,$NUBUS_BASE_DN")&scope=sub&properties=isOxUser&properties=oxAccess"
+  [[ "$UDM_STATUS" == 200 ]] || die "reading the users failed (HTTP $UDM_STATUS)"
+  OX_PROFILES_USED="$(jq -r '[._embedded["udm:object"][] | select(.properties.isOxUser == true)
+    | .properties.oxAccess // empty | select(. != "none")] | unique | join(" ")' "$UDM_BODY")"
+  OX_PROFILES_KNOWN="$(kubectl -n "$OPENDESK_NAMESPACE" exec ox-connector-0 -c main -- cat "$OX_ACCESS_FILE" 2>/dev/null \
+    | awk -F= '/^[^#].*=/ {print $1}' | sort -u | tr '\n' ' ' || true)"
+  OX_PROFILES_KNOWN="${OX_PROFILES_KNOWN% }"
+  OX_PROFILES_MISSING=""
+  for p in $OX_PROFILES_USED; do
+    [[ " $OX_PROFILES_KNOWN " == *" $p "* ]] || OX_PROFILES_MISSING="${OX_PROFILES_MISSING:+$OX_PROFILES_MISSING }$p"
+  done
+  read -r OX_PROFILE_WARNINGS OX_PROFILE_WARNING_LAST < <(
+    kubectl -n "$OPENDESK_NAMESPACE" logs ox-connector-0 -c main --since=168h 2>/dev/null \
+      | awk -v q="'" 'index($0, "Cannot find access profile " q) {
+          if (index($0, "profile " q "none" q)) { n = 0; t = "" } else { n++; t = $1 " " $2 }
+        }
+        END { print n + 0, (t == "" ? "-" : t) }')
+}
+
 # ---- Adding a worker (doc 06)
 # find_node NAME | name:vmid:ip:role – sets W_NAME, W_ID, W_IP, W_ROLE, W_ENTRY and
 # W_IN_NODES (1 if NAME is listed in NODES). A full entry is only needed for a test
@@ -433,6 +468,77 @@ control_plane_node() {
     if [[ "$role" != worker ]]; then CP_NAME="$name"; CP_IP="$ip"; return 0; fi
   done
   die "no control plane node in NODES"
+}
+
+# ---- Three control plane nodes (doc 13)
+# control_plane_nodes – CP_NAMES and CP_IPS: every node with the role control or both
+# in NODES, in the order of NODES
+control_plane_nodes() {
+  local entry name id ip role
+  CP_NAMES=(); CP_IPS=()
+  for entry in $NODES; do
+    IFS=: read -r name id ip role <<<"$entry"
+    [[ "$role" == worker ]] && continue
+    CP_NAMES+=("$name"); CP_IPS+=("$ip")
+  done
+  [[ "${#CP_NAMES[@]}" -gt 0 ]] || die "no control plane node in NODES"
+}
+
+# etcd_state – asks etcd about every control plane node from NODES (control_plane_nodes
+# first), through the first one that answers on SSH, so it also works while one of them
+# is down. Sets ETCD_VIA (node that answered, empty = none), ETCD_HEALTHY (number of
+# healthy endpoints), ETCD_UNHEALTHY (names), ETCD_LEADER (name, empty = none),
+# ETCD_MEMBERS (number of members etcd knows) and ETCD_DB_SIZE (bytes, empty = unknown).
+etcd_state() {
+  local i eps="" out="" ep health status members
+  ETCD_VIA=""; ETCD_HEALTHY=0; ETCD_UNHEALTHY=""; ETCD_LEADER=""; ETCD_MEMBERS=0; ETCD_DB_SIZE=""
+  for i in "${!CP_IPS[@]}"; do eps+="${eps:+,}https://${CP_IPS[$i]}:2379"; done
+  for i in "${!CP_IPS[@]}"; do
+    out="$(ssh -o BatchMode=yes -o ConnectTimeout=5 "$ANSIBLE_USER@${CP_IPS[$i]}" \
+      "E='sudo etcdctl --endpoints=$eps --cacert=/etc/ssl/etcd/ssl/ca.pem --cert=/etc/ssl/etcd/ssl/admin-${CP_NAMES[$i]}.pem --key=/etc/ssl/etcd/ssl/admin-${CP_NAMES[$i]}-key.pem'
+       echo '=== health'; \$E endpoint health -w json 2>/dev/null; echo
+       echo '=== status'; \$E endpoint status -w json 2>/dev/null; echo
+       echo '=== members'; \$E member list -w json 2>/dev/null; echo" 2>/dev/null)" || true
+    # a node counts only if its etcd answered (down node, missing certificate: next one)
+    members="$(awk '$0 == "=== members" {f = 1; next} f' <<<"$out")"
+    if grep -q '"members"' <<<"$members"; then ETCD_VIA="${CP_NAMES[$i]}"; break; fi
+  done
+  [[ -n "$ETCD_VIA" ]] || return 0
+  health="$(awk '$0 == "=== health" {f = 1; next} /^=== / {f = 0} f' <<<"$out")"
+  status="$(awk '$0 == "=== status" {f = 1; next} /^=== / {f = 0} f' <<<"$out")"
+  for i in "${!CP_IPS[@]}"; do
+    ep="https://${CP_IPS[$i]}:2379"
+    if jq -se --arg ep "$ep" 'flatten | any(.[]; .endpoint == $ep and .health == true)' <<<"$health" >/dev/null 2>&1; then
+      ETCD_HEALTHY=$((ETCD_HEALTHY + 1))
+    else
+      ETCD_UNHEALTHY+="${ETCD_UNHEALTHY:+ }${CP_NAMES[$i]}"
+    fi
+    # member_id and leader are 64-bit numbers; equal numbers stay equal in jq
+    if jq -se --arg ep "$ep" 'flatten | any(.[]; .Endpoint == $ep and .Status.header.member_id == .Status.leader)' <<<"$status" >/dev/null 2>&1; then
+      ETCD_LEADER="${CP_NAMES[$i]}"
+    fi
+  done
+  ETCD_MEMBERS="$(jq -s '[.[].members // [] | .[]] | length' <<<"$members" 2>/dev/null || echo 0)"
+  ETCD_DB_SIZE="$(jq -sr '[flatten[] | .Status.dbSize // empty] | max // empty' <<<"$status" 2>/dev/null || true)"
+}
+
+# label_workers – gives every worker from NODES that is a node of the cluster the role
+# label "worker", so that kubectl get nodes shows it under ROLES (Kubernetes only labels
+# the control plane). Nodes that already have the label are left alone.
+label_workers() {
+  local entry name id ip role labeled set_on=""
+  labeled="$(kubectl get nodes -l node-role.kubernetes.io/worker -o name 2>/dev/null || true)"
+  for entry in $NODES; do
+    IFS=: read -r name id ip role <<<"$entry"
+    [[ "$role" == worker ]] || continue
+    kubectl get node "$name" >/dev/null 2>&1 || continue
+    grep -qx "node/$name" <<<"$labeled" && continue
+    run kubectl label node "$name" node-role.kubernetes.io/worker=
+    set_on+=" $name"
+  done
+  if [[ -z "$set_on" ]]; then ok "every worker has the role label worker"
+  elif [[ "$DRY_RUN" == 1 ]]; then info "(dry run) role label worker not set on:$set_on"
+  else ok "role label worker set on:$set_on"; fi
 }
 
 # run_playbook LOG PLAYBOOK [ansible-playbook args...] – runs a playbook from the

@@ -4,6 +4,7 @@
 # Doc:     docs/02-kubernetes-cluster-kubespray.md (sections 1.3 and 3.1)
 # Run on:  kubespray VM as k8s (needs the Ansible key as ~/.ssh/id_ed25519)
 # Usage:   ./check-nodes.sh [--reboot]
+#          NODES_ONLY="master2:211:10.240.0.31:control" ./check-nodes.sh --reboot   (only these)
 #
 #   --reboot   reboot NEW nodes that report "reboot required" (after the first
 #              boot of a clone) and wait until they are back. Nodes that are

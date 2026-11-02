@@ -14,7 +14,8 @@ The mail domain and the name of the groupware group are in section "05" of `lab.
 | 3 | `../03-opendesk/deploy-opendesk.sh` (in tmux) | etcd backup, configuration and release list saved, `helmfile apply` (about 25 minutes), release list compared afterwards | Yes |
 | 4 | `../ops/post-rollout.sh` | Enables `files_external` again (error F3) and adds the missing users to `managed-by-attribute-Groupware` (error F2), then runs the checks | Only what is missing |
 | 5 | `../04-identity/configure-keycloak-realm.sh` | Sets the post-logout URI of the client – without it the logout ends with "Invalid redirect uri" (error F5) | Only if missing |
-| 6 | `verify-ox.sh` | Configuration, releases `open-xchange`, `ox-connector`, `opendesk-open-xchange-bootstrap`, pods, certificate with `webmail` and `dav`, HTTP codes, OX Connector log, groupware group | No |
+| 6 | `verify-ox.sh` | Configuration, releases `open-xchange`, `ox-connector`, `opendesk-open-xchange-bootstrap`, pods, certificate with `webmail` and `dav`, HTTP codes, OX Connector log, groupware group, access profiles of the OX Connector | No |
+| 7 | `reapply-ox-access.sh` | Only if `verify-ox.sh` reports "Cannot find access profile" (error F6: Calendar and Tasks open the mail): sets `oxAccess` of every OX user – or of the names given – to `none` and back, so the OX Connector applies the profile again. Nobody loses access; users log in again afterwards | Yes; `--dry-run` lists the users |
 
 Then the acceptance in the browser stays manual (doc 05, section 9): two accounts in two **different** browsers, mail in both directions, a calendar invitation and the address book.
 
@@ -28,7 +29,8 @@ The job `opendesk-nextcloud-management` switches `files_external` off on every `
 ./05-ox/enable-ox.sh --dry-run                    # expect: already enabled
 ./ops/post-rollout.sh --dry-run                   # expect: enabled, no member missing
 ./04-identity/configure-keycloak-realm.sh --dry-run
-./05-ox/verify-ox.sh
+./05-ox/verify-ox.sh                              # step 5/6: access profiles (F6)
+./05-ox/reapply-ox-access.sh --dry-run            # lists the users, changes nothing
 ./04-identity/verify-sso.sh                       # now also checks the post-logout URI
 ```
 

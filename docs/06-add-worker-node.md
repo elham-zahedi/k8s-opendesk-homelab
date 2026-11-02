@@ -337,7 +337,7 @@ kubectl -n longhorn-system get volumes.longhorn.io | grep -c pvc-c4416518 || tru
 
 **Scope:** the procedure follows the official Kubespray guide "Adding/replacing a worker node" (`docs/operations/nodes.md`, v2.32.0).
 
-- Workers only. Control plane and etcd nodes are added with `cluster.yml` without a limit; afterwards nginx-proxy is restarted on all nodes.
+- Workers only. Control plane and etcd nodes need `cluster.yml` and `upgrade-cluster.yml`, then nginx-proxy is restarted on all workers: [13 – Three control plane nodes](13-three-control-plane-nodes.md).
 - Do not change the Kubespray version or the group_vars between installation and extension, otherwise the new node gets different settings.
 - The fact cache is valid for 24 hours (`fact_caching_timeout = 86400`). That is why `facts.yml` should be run again before every `scale.yml`.
 - The preparation from section 4 must be finished before `scale.yml`. As soon as the node is `Ready`, Kubernetes schedules pods on it.
