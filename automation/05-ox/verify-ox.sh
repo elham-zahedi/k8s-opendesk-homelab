@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # 05 – Check OX App Suite: configuration, releases, pods, certificate, web and DAV
-#      access, OX Connector and the groupware group in Nubus.
+#      access, OX Connector, the groupware group in Nubus and the access profiles.
 #
-# Doc:     docs/05-ox-app-suite.md (sections 5, 6, 8 and 14.2)
+# Doc:     docs/05-ox-app-suite.md (sections 5, 6, 8, 12.3 and 14.2)
 # Run on:  kubespray VM as k8s
 # Usage:   ./verify-ox.sh
 #
@@ -22,7 +22,7 @@ use_kubectl
 NS="$OPENDESK_NAMESPACE"
 VALUES="$OPENDESK_DIR/helmfile/environments/$OPENDESK_ENV/values.yaml.gotmpl"
 
-step "1/5 Configuration and releases"
+step "1/6 Configuration and releases"
 check "apps.oxAppSuite.enabled: true"    test "$(yq '.apps.oxAppSuite.enabled' "$VALUES")" = true
 check "global.mailDomain: $MAIL_DOMAIN"  test "$(yq '.global.mailDomain' "$VALUES")" = "$MAIL_DOMAIN"
 rel="$(helm -n "$NS" list -a -o json)"
@@ -32,7 +32,7 @@ done
 notdeployed="$(jq -r '[.[] | select(.status != "deployed") | .name] | join(" ")' <<<"$rel")"
 check "all $(jq length <<<"$rel") releases deployed ${notdeployed:+(not: $notdeployed)}" test -z "$notdeployed"
 
-step "2/5 Pods"
+step "2/6 Pods"
 pods="$(kubectl -n "$NS" get pods --no-headers | grep -E '^(open-xchange|ox-connector|dovecot|postfix)' || true)"
 bad="$(awk '$3 != "Running" && $3 != "Completed" {print $1 " " $3}' <<<"$pods")"
 info "$(grep -c '^open-xchange' <<<"$pods" || true) open-xchange pods, plus ox-connector, dovecot, postfix, postfix-ox"
@@ -44,7 +44,7 @@ done
 errors="$(kubectl -n "$NS" logs ox-connector-0 -c main --since=24h 2>/dev/null | grep -ciE 'error|traceback' || true)"
 check "ox-connector: no error lines in 24 hours ($errors)" test "$errors" -eq 0
 
-step "3/5 Certificate and access"
+step "3/6 Certificate and access"
 san="$(kubectl -n "$NS" get secret opendesk-certificates-tls -o jsonpath='{.data.tls\.crt}' | base64 -d | openssl x509 -noout -ext subjectAltName)"
 for h in webmail dav; do check "certificate contains $h.$DOMAIN" grep -q "DNS:$h.$DOMAIN" <<<"$san"; done
 for pair in webmail:302 dav:401 portal:301 files:302; do
@@ -53,7 +53,7 @@ for pair in webmail:302 dav:401 portal:301 files:302; do
   check "https://$h.$DOMAIN -> $want (got $got)" test "$got" = "$want"
 done
 
-step "4/5 Groupware group in Nubus"
+step "4/6 Groupware group in Nubus"
 udm_connect
 groupware_state
 info "users with isOxUser = true in ou=$NUBUS_OU: $OX_USERS, members of $GROUPWARE_GROUP: $GW_MEMBERS"
@@ -61,7 +61,14 @@ check "group $GROUPWARE_GROUP exists" test -n "$GW_DN"
 check "every user with isOxUser = true is a member ($GW_MISSING missing)" test "$GW_MISSING" -eq 0
 [[ "$GW_MISSING" -eq 0 ]] || info "fix: ./ops/post-rollout.sh (doc 05, section 8 – error F2)"
 
-step "5/5 Mail in the last 24 hours (information only)"
+step "5/6 Access profiles in the OX Connector"
+ox_access_state
+info "profiles in use: ${OX_PROFILES_USED:-none}; known to the OX Connector: ${OX_PROFILES_KNOWN:-none}"
+check "every profile in use is known to the OX Connector${OX_PROFILES_MISSING:+ (missing: $OX_PROFILES_MISSING)}" test -z "$OX_PROFILES_MISSING"
+check "no user left without its profile in 7 days ($OX_PROFILE_WARNINGS \"Cannot find access profile\", last: $OX_PROFILE_WARNING_LAST)" test "$OX_PROFILE_WARNINGS" -eq 0
+[[ "$OX_PROFILE_WARNINGS" -eq 0 ]] || info "fix: ./05-ox/reapply-ox-access.sh, then log out and in again (doc 05, section 12.3 – error F6)"
+
+step "6/6 Mail in the last 24 hours (information only)"
 for d in postfix-ox postfix; do
   log="$(kubectl -n "$NS" logs "deploy/$d" --since=24h 2>/dev/null || true)"
   info "$d: $(grep -c 'status=sent' <<<"$log" || true) sent, $(grep -c 'status=deferred' <<<"$log" || true) deferred, $(grep -c 'status=bounced' <<<"$log" || true) bounced"

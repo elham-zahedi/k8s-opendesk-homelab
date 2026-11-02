@@ -33,7 +33,8 @@ tmux new -s scale
 - **`/etc/hosts` on all nodes.** Kubespray no longer writes the nodes to `/etc/hosts`, and cloud-init rewrites the file on every boot, so the block also goes into the cloud-init template.
 - **Same Kubespray version and group_vars** as at the installation – otherwise the new node gets different settings. `add-worker.sh` stops if the version differs.
 - **`nls_utf8` for the running kernel.** The new node installs updates on the first boot and usually runs a newer kernel than the others.
-- **Only workers.** Control plane and etcd nodes are added with `cluster.yml` without a limit (doc 06, section 8).
+- **Only workers.** Control plane and etcd nodes are added differently: [`07-control-plane`](../07-control-plane/) and doc 13.
+- **Role label.** After the join `add-worker.sh` labels the node as `worker`, so that `kubectl get nodes` shows it under ROLES – Kubernetes only labels the control plane.
 
 ## Testing on a running lab
 

@@ -12,16 +12,18 @@
 #
 #  1 Nodes            NotReady, cordoned after an aborted drain (10), memory usage
 #  2 On the nodes     nls_utf8 and linux-modules-extra for the newest kernel (04 F7),
-#                     disk, time, pending reboots
+#                     disk, time, pending reboots, the API proxy (nginx-proxy) of
+#                     every worker knows all control plane nodes (13)
 #  3 Pods, rollouts   ImagePullBackOff (08), Pending (09), OOMKilled/CrashLoop (11),
 #                     stuck Terminating (12), unfinished rollouts, deployments at 0
 #                     replicas and services without endpoints (07)
 #  4 Access           portal, files, idp; webmail, its API and dav (07)
 #  5 Storage          PVCs, Longhorn volumes and nodes (10, 12)
 #  6 Certificates     Ready, renewal not overdue, CA expiry (04 section 24.1)
-#  7 Integrations     files_external and groupware group (05 F2/F3), importer,
-#                     split DNS and strictARP (03)
-#  8 etcd             health, size, age of the newest backup
+#  7 Integrations     files_external, groupware group and OX access profiles
+#                     (05 F2/F3/F6), importer, split DNS and strictARP (03)
+#  8 etcd             every member healthy, as many members as control plane nodes,
+#                     a leader (13), size, age of the newest backup
 #
 # Known exceptions (deployments at 0 replicas, services without endpoints):
 #   DAILY_IGNORE="opendesk/some-service|other-ns/.*" in lab.env (regex on namespace/name)
@@ -35,7 +37,7 @@ load_env
 require_vars NODES ANSIBLE_USER OPENDESK_NAMESPACE OPENDESK_DIR OPENDESK_ENV DOMAIN ETCD_BACKUP_DIR INVENTORY_NAME
 require_cmd jq curl yq
 identity_vars
-control_plane_node
+control_plane_nodes
 use_kubectl
 IGNORE="${DAILY_IGNORE:-^$}"
 VALUES="$OPENDESK_DIR/helmfile/environments/$OPENDESK_ENV/values.yaml.gotmpl"
@@ -69,14 +71,21 @@ step "2/8 On the nodes (doc 04 error F7, doc 06)"
 REMOTE='exec 2>/dev/null
 newest=$(dpkg-query -W -f="\${db:Status-Abbrev}\${Package}\n" "linux-image-[0-9]*" 2>/dev/null | awk "/^ii/ {sub(/^ii */, \"\"); sub(/^linux-image-/, \"\"); print}" | sort -V | tail -1)
 extra=$(dpkg-query -W -f="\${db:Status-Abbrev}" "linux-modules-extra-$newest" 2>/dev/null | grep -c "^ii")
-echo "kernel=$(uname -r) newest=$newest extra=$extra nls=$(lsmod | grep -c "^nls_utf8") disk=$(df --output=pcent /var/lib | tail -1 | tr -dc 0-9) ntp=$(timedatectl show -p NTPSynchronized --value) reboot=$([ -f /var/run/reboot-required ] && echo yes || echo no)"'
+api=$(sudo -n sed -n "/upstream kube_apiserver/,/}/p" /etc/nginx/nginx.conf 2>/dev/null | grep -oE "[0-9.]+:6443" | sort -u | tr "\n" ,)
+echo "kernel=$(uname -r) newest=$newest extra=$extra nls=$(lsmod | grep -c "^nls_utf8") disk=$(df --output=pcent /var/lib | tail -1 | tr -dc 0-9) ntp=$(timedatectl show -p NTPSynchronized --value) reboot=$([ -f /var/run/reboot-required ] && echo yes || echo no) api=$api"'
 facts="$(use_kubespray; ansible -i "$INV" all -m shell -a "$REMOTE" -o 2>/dev/null || true)"
 v() { grep -oE "(^| )$1=[^ ]*" <<<"$2" | cut -d= -f2; }
-bad_nls=""; bad_extra=""; bad_disk=""; bad_ntp=""; reboot=""; seen=0
+bad_nls=""; bad_extra=""; bad_disk=""; bad_ntp=""; reboot=""; bad_api=""; seen=0
 while read -r line; do
   host="${line%% *}"
   if [[ "$line" != *"rc=0"* ]]; then bad_nls+=" $host(unreachable)"; continue; fi
   seen=$((seen + 1))
+  # workers reach the API through nginx-proxy; it must list every control plane node (doc 13)
+  if [[ " ${CP_NAMES[*]} " != *" $host "* ]]; then
+    for ip in "${CP_IPS[@]}"; do
+      [[ ",$(v api "$line")" == *",$ip:6443,"* ]] || { bad_api+=" $host"; break; }
+    done
+  fi
   [[ "$(v nls "$line")" -ge 1 ]]    || bad_nls+=" $host"
   [[ "$(v extra "$line")" -ge 1 ]]  || bad_extra+=" $host($(v newest "$line"))"
   d="$(v disk "$line")"
@@ -90,7 +99,9 @@ check "linux-modules-extra for the newest kernel${bad_extra:+ – missing:$bad_e
 [[ -z "$bad_extra" ]] || info "      before the next reboot: ./04-identity/setup-smb-storage.sh (otherwise Nextcloud loses the mounts)"
 check "disk /var/lib below 85 %${bad_disk:+ –$bad_disk}" test -z "$bad_disk"
 check "clock synchronised${bad_ntp:+ – not:$bad_ntp}" test -z "$bad_ntp"
-[[ -z "$reboot" ]] || note "reboot pending on:$reboot – one node at a time with drain/uncordon (runbook 10, section 4)"
+check "nginx-proxy of the workers knows all ${#CP_NAMES[@]} control plane node(s)${bad_api:+ – not:$bad_api}" test -z "$bad_api"
+[[ -z "$bad_api" ]] || info "      fix: cluster.yml --limit=kube_node, then restart nginx-proxy on these workers (doc 13, section 7)"
+[[ -z "$reboot" ]] || note "reboot pending on:$reboot – one node at a time with drain/uncordon (runbook 10, section 4; control plane: doc 13)"
 
 # ------------------------------------------------------------------------------
 step "3/8 Pods and rollouts (runbooks 07, 08, 09, 11, 12)"
@@ -272,6 +283,10 @@ if [[ "$OX_ENABLED" == true ]]; then
   groupware_state
   check "groupware group: $GW_MEMBERS members, $GW_MISSING of $OX_USERS users missing (doc 05, F2)" test "$GW_MISSING" -eq 0 -a -n "$GW_DN"
   [[ "$GW_MISSING" -eq 0 ]] || info "      fix: ./ops/post-rollout.sh"
+  ox_access_state
+  check "OX access profiles known to the OX Connector${OX_PROFILES_MISSING:+ – missing: $OX_PROFILES_MISSING} (doc 05, F6)" test -z "$OX_PROFILES_MISSING"
+  check "OX Connector: no user left without its profile in 7 days ($OX_PROFILE_WARNINGS) (doc 05, F6)" test "$OX_PROFILE_WARNINGS" -eq 0
+  [[ "$OX_PROFILE_WARNINGS" -eq 0 ]] || info "      fix: ./05-ox/reapply-ox-access.sh, then log out and in again"
 fi
 if kubectl get namespace directory-importer >/dev/null 2>&1; then
   logs="$(kubectl -n directory-importer logs deployment/directory-importer --since=15m 2>/dev/null || true)"
@@ -287,11 +302,19 @@ check "kube-proxy strictARP: true (MetalLB, doc 03)" test "$strict" = true
 
 # ------------------------------------------------------------------------------
 step "8/8 etcd and backups"
-ETCDCTL="sudo etcdctl --endpoints=https://$CP_IP:2379 --cacert=/etc/ssl/etcd/ssl/ca.pem \
-  --cert=/etc/ssl/etcd/ssl/admin-$CP_NAME.pem --key=/etc/ssl/etcd/ssl/admin-$CP_NAME-key.pem"
-etcd="$(ssh -o BatchMode=yes -o ConnectTimeout=5 "$ANSIBLE_USER@$CP_IP" "$ETCDCTL endpoint health 2>&1; $ETCDCTL endpoint status -w json" 2>/dev/null || true)"
-check "etcd on $CP_NAME healthy" grep -q 'is healthy' <<<"$etcd"
-size="$(grep '^\[' <<<"$etcd" | jq -r '.[0].Status.dbSize // empty' 2>/dev/null || true)"
+etcd_state
+cps="${#CP_NAMES[@]}"
+if [[ -z "$ETCD_VIA" ]]; then
+  check "etcd answers on one of the control plane nodes (${CP_NAMES[*]})" false
+else
+  check "etcd: $ETCD_HEALTHY of $cps member(s) healthy${ETCD_UNHEALTHY:+ – not: $ETCD_UNHEALTHY}" test "$ETCD_HEALTHY" -eq "$cps"
+  if [[ "$ETCD_HEALTHY" -lt "$cps" && "$ETCD_HEALTHY" -gt $((cps / 2)) ]]; then
+    info "      the cluster still works ($ETCD_HEALTHY of $cps) – bring the node back the same day (doc 13)"
+  fi
+  check "etcd: $ETCD_MEMBERS members, as many as control plane nodes in NODES" test "$ETCD_MEMBERS" -eq "$cps"
+  check "etcd has a leader (${ETCD_LEADER:-none})" test -n "$ETCD_LEADER"
+fi
+size="$ETCD_DB_SIZE"
 if [[ -n "$size" ]]; then
   info "etcd database: $((size / 1000000)) MB (limit 2 GB; space is only freed by a defragmentation)"
   [[ "$size" -lt 1000000000 ]] || note "etcd database above 1 GB – plan a defragmentation"
