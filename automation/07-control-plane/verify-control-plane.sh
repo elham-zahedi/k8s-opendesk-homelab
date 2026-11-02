@@ -90,8 +90,8 @@ done
 
 # ------------------------------------------------------------------------------
 step "5/5 API proxy (nginx-proxy) of the workers"
-REMOTE='echo "api=$(sed -n "/upstream kube_apiserver/,/}/p" /etc/nginx/nginx.conf 2>/dev/null | grep -oE "[0-9.]+:6443" | sort -u | paste -sd,)"
-echo "conf=$(stat -c %Y /etc/nginx/nginx.conf 2>/dev/null || echo 0)"
+REMOTE='echo "api=$(sudo -n sed -n "/upstream kube_apiserver/,/}/p" /etc/nginx/nginx.conf 2>/dev/null | grep -oE "[0-9.]+:6443" | sort -u | paste -sd,)"
+echo "conf=$(sudo -n stat -c %Y /etc/nginx/nginx.conf 2>/dev/null || echo 0)"
 sudo crictl ps --name nginx-proxy -o json 2>/dev/null'
 want="$(for ip in "${CP_IPS[@]}"; do echo "$ip:6443"; done | sort | paste -sd,)"
 stale=""; incomplete=""

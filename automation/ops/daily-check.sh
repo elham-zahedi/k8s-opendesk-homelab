@@ -71,7 +71,7 @@ step "2/8 On the nodes (doc 04 error F7, doc 06)"
 REMOTE='exec 2>/dev/null
 newest=$(dpkg-query -W -f="\${db:Status-Abbrev}\${Package}\n" "linux-image-[0-9]*" 2>/dev/null | awk "/^ii/ {sub(/^ii */, \"\"); sub(/^linux-image-/, \"\"); print}" | sort -V | tail -1)
 extra=$(dpkg-query -W -f="\${db:Status-Abbrev}" "linux-modules-extra-$newest" 2>/dev/null | grep -c "^ii")
-api=$(sed -n "/upstream kube_apiserver/,/}/p" /etc/nginx/nginx.conf 2>/dev/null | grep -oE "[0-9.]+:6443" | sort -u | tr "\n" ,)
+api=$(sudo -n sed -n "/upstream kube_apiserver/,/}/p" /etc/nginx/nginx.conf 2>/dev/null | grep -oE "[0-9.]+:6443" | sort -u | tr "\n" ,)
 echo "kernel=$(uname -r) newest=$newest extra=$extra nls=$(lsmod | grep -c "^nls_utf8") disk=$(df --output=pcent /var/lib | tail -1 | tr -dc 0-9) ntp=$(timedatectl show -p NTPSynchronized --value) reboot=$([ -f /var/run/reboot-required ] && echo yes || echo no) api=$api"'
 facts="$(use_kubespray; ansible -i "$INV" all -m shell -a "$REMOTE" -o 2>/dev/null || true)"
 v() { grep -oE "(^| )$1=[^ ]*" <<<"$2" | cut -d= -f2; }
