@@ -70,6 +70,7 @@ flowchart LR
 | 04 | [Active Directory and SSO](docs/04-active-directory-sso.md) | Directory Importer, SMB shares in Nextcloud, Keycloak federation |
 | 05 | [OX App Suite](docs/05-ox-app-suite.md) | Mail, calendar and contacts for 500 AD users |
 | 06 | [Adding a worker node](docs/06-add-worker-node.md) | Joining node6 with `scale.yml`, fixing a stale fact cache |
+| 13 | [Three control plane nodes](docs/13-three-control-plane-nodes.md) | VMs spread over three Proxmox hosts, two more control plane and etcd nodes with Kubespray, failover test |
 
 ### Troubleshooting runbooks
 
