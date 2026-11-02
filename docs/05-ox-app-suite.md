@@ -746,7 +746,7 @@ This part did not create any new passwords. openDesk derives the internal OX pas
 
 ## 12. Troubleshooting
 
-Five errors occurred on 13 and 14.10.2026; F2 and F3 affect every future rollout and are included as mandatory checks in section 14.1.
+Five errors occurred on 13 and 14.10.2026; F2 and F3 affect every future rollout and are included as mandatory checks in section 14.1. F6 was found on 29.10.2026 on a second installation; `verify-ox.sh` and `daily-check.sh` check it since then.
 
 | # | Problem / message | Cause | Solution |
 |---|---|---|---|
@@ -755,12 +755,14 @@ Five errors occurred on 13 and 14.10.2026; F2 and F3 affect every future rollout
 | F3 | After the rollout "files_external NOT active"; nc-mounts.sh shows PLAN instead of SKIP and "There are no commands defined in the "files_external" namespace" | The job opendesk-nextcloud-management ran during the rollout and switches off apps outside its list | `occ app:enable files_external`; mounts and options are kept (section 7); repeat after every rollout |
 | F4 | Expected values in the guide did not match: "about 60 releases", host "mail.k8s.lab" | 60 is the number of all possible releases; the OX host is called webmail | Corrected in this document: 23 and 26 releases, webmail.k8s.lab |
 | F5 | Logout: idp.k8s.lab shows "We are sorry… Invalid redirect uri" | The client `opendesk` in the realm `intern` had no "Valid post logout redirect URIs"; part 4 (19.4) only set the redirect URI for the login. The openDesk session ended, the session on idp.k8s.lab stayed open | Post-logout URI `https://id.k8s.lab/realms/opendesk/broker/sso-federation-idp-internIdP/endpoint/logout_response` set via the admin REST API, PUT 204 (section 12.2) |
+| F6 | The portal tiles Calendar and Tasks open the mail, also after a new login; Contacts and Files work. In the browser only `webmail` and `contacts` among the capabilities, no `calendar` and no `tasks` | The OX Connector created the users in OX while it did not know the access profile `opendesk_standard` yet ("Cannot find access profile … Leaving access rights untouched!"); OX kept only mail and contacts. The connector applies a profile only while it processes a user, not when the profile changes. Nubus showed `oxAccess = opendesk_standard` the whole time | `05-ox/reapply-ox-access.sh` sets `oxAccess` of every OX user to `none` and back; the users log in again (section 12.3) |
 
 ### 12.1 Typical errors and checks
 
 | Symptom | Check / solution |
 |---|---|
 | No Email or Calendar tiles after login | Old session without group claim: close all private windows and log in again; check the membership with section 2.2 |
+| Calendar or Tasks tile opens the mail, Contacts works | F6, section 12.3 |
 | Tiles missing for a new AD user | Check `isOxUser` of the user (section 2.3); check membership in managed-by-attribute-Groupware; if needed, change the user once (section 8.1) |
 | Webmail reports a login error or an unknown account | User not in OX: search `kubectl -n opendesk logs ox-connector-0 -c main` for `uid=<name>` |
 | ox-connector in CrashLoopBackOff | `kubectl -n opendesk logs ox-connector-0 --previous`; "Schema … is locked" is only normal on the first start; if it persists, check mariadb |
@@ -791,6 +793,38 @@ unset TOKEN
 
 Result on 14.10.2026: the Keycloak log showed `redirect_uri=…/endpoint/logout_response`, and `postLogout` was `null` before. After `PUT 204`, logout ends without an error, and the next "Login with AD account" asks for the password again. `/tmp/client.json` contains the client secret and is deleted immediately.
 
+### 12.3 Calendar and tasks missing (F6)
+
+**Symptom:** the tiles Calendar and Tasks open the mail – also in a new tab and after a new login. Contacts and Files work. The links of the tiles are correct (`…/appsuite/#app=io.ox/calendar`), and the address still contains `app=io.ox/calendar` after the login.
+
+**Check in the browser:** in a logged-in OX tab, F12 → Console. Chrome first asks to type `allow pasting`. The line prints only the names of the rights, not the session:
+
+```js
+s=(performance.getEntriesByType('resource').map(e=>e.name).join(' ')+' '+location.href).match(/session=([0-9a-f]+)/)?.[1];fetch('api/capabilities?action=all&session='+s).then(r=>r.json()).then(j=>console.log(j.data?j.data.map(c=>c.id).filter(id=>/calendar|task|contact|webmail|chronos/.test(id)).sort().join(', '):j.error))
+```
+
+✔ **Expected:** `calendar` and `tasks` in the list. With F6 the list only has `contacts`, `webmail` and entries starting with `contact_`.
+
+**Check on the command line** (kubespray VM as k8s): `./05-ox/verify-ox.sh`, step 5/6. Every profile in use must be known to the OX Connector, and there must be no open "Cannot find access profile" in the last 7 days. The profiles the connector knows:
+
+```bash
+kubectl -n opendesk exec ox-connector-0 -c main -- cat /var/lib/univention-appcenter/apps/ox-connector/data/ModuleAccessDefinitions.properties
+```
+
+**Cause:** when an access profile changes, the OX Connector only rewrites this file and sends nothing to OX. It applies a profile while it processes a user. Users it created before the profile was in the file keep only mail and contacts, although Nubus shows `oxAccess = opendesk_standard`. A rollout of `ums` creates and deletes the Nubus default profiles (`webmail`, `pim`, `groupware`, `premium` …) again; this does not touch `opendesk_standard`.
+
+**Fix:**
+
+```bash
+./05-ox/reapply-ox-access.sh --dry-run            # users and profiles, nothing is changed
+./05-ox/reapply-ox-access.sh alexander.braun      # one account first, log in again, open Calendar
+./05-ox/reapply-ox-access.sh                      # all users with isOxUser = true
+```
+
+The script sets `oxAccess` to `none` and back to the user's own profile. The connector does not know `none` and leaves the rights untouched (section 13), so nobody loses access; the change back applies the full profile. Afterwards every user logs out and in again.
+
+Result on 29.10.2026 (second installation): first one account, then all 5 OX users; Calendar and Tasks open from the portal. New users get the full profile, because the connector knows it now.
+
 ## 13. Not an error – normal behavior
 
 These messages and states looked like errors on 14.10.2026, but are normal.
@@ -814,6 +848,7 @@ These messages and states looked like errors on 14.10.2026, but are normal.
 | 89M in `ls`, 92 MB in `etcdutl` | MiB versus MB |
 | "Defaulted container "main" out of: main, wait-for-provisioning-api (init), migrate-database (init)" | The pod has two init containers; the log comes from main |
 | etcd command pasted twice, only one file | The second call overwrites the same file |
+| WARNING "Cannot find access profile 'none'. Leaving access rights untouched!" | Written while `reapply-ox-access.sh` runs (section 12.3): the connector does not know the profile `none` and leaves the rights as they are; the change back applies the full profile |
 
 ### 13.1 When changes become visible
 
@@ -854,6 +889,8 @@ for h in webmail dav; do echo -n "$h.k8s.lab: "; curl -s -o /dev/null -w "%{http
 ```
 
 ✔ **Expected:** no line from the first command, 0 error lines, webmail 302 and dav 401.
+
+`./05-ox/verify-ox.sh` and `./ops/daily-check.sh` also check the access profiles of the OX Connector (F6, section 12.3).
 
 ### 14.3 Dates
 

@@ -1,6 +1,6 @@
 # 12 – Worker Node Failure: Replacing node6
 
-> Troubleshooting runbook / failure drill. Previous: [11 – Container keeps restarting – OOMKilled](11-oomkilled.md) · Back to the [overview](../README.md)
+> Troubleshooting runbook / failure drill. Previous: [11 – Container keeps restarting – OOMKilled](11-oomkilled.md) · Next: [13 – Three control plane nodes](13-three-control-plane-nodes.md) · Back to the [overview](../README.md)
 
 **Summary:** On 19.10.2026, the worker node6 was powered off hard. The failure was observed, node6 was removed from the cluster ungracefully and replaced by a new VM with the same name. A Deployment replaced its pods on its own after about 5 minutes. A StatefulSet stayed stuck until the node was removed, and then continued on node4 with the same data. openDesk was reachable during the entire drill.
 
@@ -344,4 +344,4 @@ kubectl -n longhorn-system get nodes.longhorn.io
 
 ---
 
-Previous: [11 – Container keeps restarting – OOMKilled](11-oomkilled.md) · Back to the [overview](../README.md)
+Previous: [11 – Container keeps restarting – OOMKilled](11-oomkilled.md) · Next: [13 – Three control plane nodes](13-three-control-plane-nodes.md) · Back to the [overview](../README.md)

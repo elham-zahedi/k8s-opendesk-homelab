@@ -16,7 +16,7 @@
 
 This document describes how six VMs were cloned from template 9000 and turned into a Kubernetes cluster with **1 control plane and 5 workers** using Kubespray – up to the acceptance tests and a full reboot test. All commands were run on 07.10.2026 in exactly this environment.
 
-> **Note:** With a single control plane node, the cluster is suitable for testing, learning and development. Production use requires at least 3 control plane nodes.
+> **Note:** With a single control plane node, the cluster is suitable for testing, learning and development. Production use requires at least 3 control plane nodes – how two more were added to a running cluster: [13 – Three control plane nodes](13-three-control-plane-nodes.md).
 
 ### 0.1 Architecture
 

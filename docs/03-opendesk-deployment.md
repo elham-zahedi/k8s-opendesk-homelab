@@ -22,7 +22,7 @@ This document describes how openDesk was installed on the Kubernetes cluster fro
 
 Enabled: Nubus (UMS, portal, Keycloak), Nextcloud and Collabora Online. Disabled: OpenProject, OX App Suite, XWiki, Element, Jitsi and CryptPad. (OX App Suite was enabled later, see [05](05-ox-app-suite.md).)
 
-> **Note:** With a single control plane node, this environment is suitable for testing, learning and development. Production use would still need high availability, a Longhorn backup target and adjusted volume sizes (section 18).
+> **Note:** With a single control plane node, this environment is suitable for testing, learning and development. Production use would still need high availability ([13](13-three-control-plane-nodes.md)), a Longhorn backup target and adjusted volume sizes (section 18).
 
 ### 0.2 Architecture
 

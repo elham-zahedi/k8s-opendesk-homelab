@@ -8,8 +8,11 @@
 # Clones every node listed in NODES (lab.env) as a full clone, sets its static IP
 # and starts it. Stops before cloning anything if one of the VM IDs is in use.
 #
-# Test with a single extra VM (nothing else is touched):
-#   NODES="k8s-test:299:10.240.0.29:both" ./clone-nodes.sh
+# Only some VMs, e.g. a test VM or two new control plane nodes (doc 13). NODES_ONLY also
+# works when lab.env sets NODES without ${NODES:-…}, where NODES="…" would be ignored:
+#   NODES_ONLY="k8s-test:299:10.240.0.29:both" ./clone-nodes.sh
+# The clones are created and started on this host (where the template is); move them
+# to their own Proxmox host afterwards: qm migrate VMID HOST --online (doc 13, section 3).
 
 # shellcheck source=../lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
