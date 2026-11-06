@@ -81,7 +81,7 @@ run qm create "$ID" --name "$TEMPLATE_NAME" \
   --memory "$VM_MEMORY" --balloon 0 \
   --net0 "virtio,bridge=$PVE_BRIDGE,mtu=1" \
   --scsihw virtio-scsi-single --machine q35 \
-  --ostype l26 --agent enabled=1
+  --ostype l26 --agent enabled=1,freeze-fs-on-backup=0   # no fs-freeze during backups (runbook 14)
 
 # ------------------------------------------------------------------------------
 step "4/6 Import the disk, resize it to $VM_DISK_SIZE, add cloud-init drive and console"
