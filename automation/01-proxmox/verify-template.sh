@@ -39,6 +39,7 @@ check "boot from scsi0"                   has "^boot: order=scsi0$"
 check "serial console"                    has "^serial0: socket$"
 check "display serial0"                   has "^vga: serial0$"
 check "QEMU guest agent enabled"          has "^agent: (1|enabled=1)"
+check "no fs-freeze during backups"      has "^agent: .*freeze-fs-on-backup=0"
 
 step "Template $ID – cloud-init"
 check "user ${CI_USER}"                   has "^ciuser: ${CI_USER}$"

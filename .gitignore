@@ -5,3 +5,5 @@ lab.env
 *.pem
 kubeconfig*
 admin.conf
+# Backups of local files (e.g. lab.env.bak-20261102-0854)
+*.bak-*

@@ -1,6 +1,6 @@
 # 13 – Three Control Plane Nodes
 
-> Part 13 of the series. Previous: [12 – Worker node failure and replacement](12-node-failure-replace-worker.md) · Back to the [overview](../README.md)
+> Part 13 of the series. Previous: [12 – Worker node failure and replacement](12-node-failure-replace-worker.md) · Next: [14 – I/O errors after the nightly backup](14-backup-freeze-io-error.md) · Back to the [overview](../README.md)
 
 **Summary:** A second installation of this setup ran with one control plane node, and all its VMs were on one Proxmox host. On 30.10.2026 the workers were spread over three Proxmox hosts with live migration; on 02.11.2026 two more control plane and etcd nodes were added to the running cluster with Kubespray. A failover test followed: the first control plane node was shut down, etcd chose a new leader, all workers stayed `Ready` and openDesk kept running. The whole work happened during working hours without an interruption for the users.
 
@@ -300,4 +300,4 @@ Right after the start, the daily check reported `calico-node … NotReady master
 
 ---
 
-Previous: [12 – Worker node failure and replacement](12-node-failure-replace-worker.md) · Back to the [overview](../README.md)
+Previous: [12 – Worker node failure and replacement](12-node-failure-replace-worker.md) · Next: [14 – I/O errors after the nightly backup](14-backup-freeze-io-error.md) · Back to the [overview](../README.md)
