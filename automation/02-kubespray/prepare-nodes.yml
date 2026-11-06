@@ -56,3 +56,28 @@
       changed_when: false
       check_mode: false
       failed_when: resolve.rc != 0 and not ansible_check_mode
+
+    # The Proxmox backup freezes all file systems of a VM through the guest agent,
+    # also the Longhorn volumes of the pods. When two nodes are frozen at the same
+    # time, Longhorn hangs and the pods get I/O errors (runbook 14). With these
+    # commands blocked, the backup simply runs without freezing.
+    - name: Config folder of the QEMU guest agent
+      ansible.builtin.file:
+        path: /etc/qemu
+        state: directory
+        mode: "0755"
+
+    - name: Block fs-freeze in the QEMU guest agent
+      ansible.builtin.copy:
+        dest: /etc/qemu/qemu-ga.conf
+        mode: "0644"
+        content: |
+          [general]
+          block-rpcs=guest-fsfreeze-freeze,guest-fsfreeze-freeze-list
+      register: qga_conf
+
+    - name: Restart the QEMU guest agent after a change
+      ansible.builtin.systemd:
+        name: qemu-guest-agent
+        state: restarted
+      when: qga_conf.changed and not ansible_check_mode

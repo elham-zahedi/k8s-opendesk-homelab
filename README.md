@@ -84,10 +84,11 @@ Each runbook follows the same structure: **symptom → step-by-step diagnosis �
 | 10 | [Node stuck in SchedulingDisabled](docs/10-node-schedulingdisabled.md) | Aborted `kubectl drain` left the node cordoned |
 | 11 | [Container keeps restarting – OOMKilled](docs/11-oomkilled.md) | Memory limit too low, exit code 137, kernel OOM log |
 | 12 | [Worker node failure and replacement](docs/12-node-failure-replace-worker.md) | Hard power-off, StatefulSet volume handover, node replacement |
+| 14 | [I/O errors after the nightly backup](docs/14-backup-freeze-io-error.md) | Proxmox backup froze two nodes at the same time (guest agent fs-freeze), Longhorn timed out |
 
 ## Automation
 
-The [`automation/`](automation/) folder contains Bash scripts that rebuild the lab step by step – one folder per document, with a central settings file, `--dry-run` for every script and read-only `verify-*.sh` checks. Sections 01 – 06 (Proxmox template, Kubespray cluster, platform services and openDesk, Active Directory and SSO, OX App Suite, adding a worker) are tested in the lab, together with a read-only daily check that covers the prevention steps of the runbooks 07 – 12.
+The [`automation/`](automation/) folder contains Bash scripts that rebuild the lab step by step – one folder per document, with a central settings file, `--dry-run` for every script and read-only `verify-*.sh` checks. Sections 01 – 06 (Proxmox template, Kubespray cluster, platform services and openDesk, Active Directory and SSO, OX App Suite, adding a worker) are tested in the lab, together with a daily check that covers the prevention steps of the runbooks 07 – 12 and 14.
 
 ## Lessons learned
 
@@ -96,6 +97,7 @@ The [`automation/`](automation/) folder contains Bash scripts that rebuild the l
 - **Re-running Kubespray does not change everything.** `strictARP` for MetalLB stayed `false` after `cluster.yml`, because the kube-proxy configuration is only written at install or upgrade time. It had to be patched directly.
 - **A missing kernel module can stop an application.** Ubuntu cloud images ship without `linux-modules-extra`. Without `nls_utf8` the SMB mounts failed and Nextcloud would not start – this must be re-checked after every kernel update.
 - **Rollouts can silently undo manual changes.** The openDesk Nextcloud management job disables `files_external` on every rollout, so users lost their file server folders. It is now a mandatory post-rollout check.
+- **A backup can break the storage of a running cluster.** The nightly Proxmox backup froze the file systems of the nodes through the guest agent. After the VMs were spread over three hosts, two nodes were frozen at the same time, Longhorn timed out and PostgreSQL got I/O errors. Longhorn still showed every volume as `healthy`; only a write test in the pods found the broken mounts.
 - **Stale facts break `scale.yml`.** Adding a node with `--limit` failed because the fact cache of the control plane was incomplete. Running `facts.yml` without a limit first solved it.
 
 ## Security note

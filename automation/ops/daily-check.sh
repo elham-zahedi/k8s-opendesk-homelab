@@ -1,24 +1,28 @@
 #!/usr/bin/env bash
-# ops – Daily check of the whole lab: everything that the runbooks 07 – 12 and the
-#       documents 03 – 06 found to break silently.
+# ops – Daily check of the whole lab: everything that the runbooks 07 – 12 and 14 and
+#       the documents 03 – 06 found to break silently.
 #
-# Doc:     docs/07 – 12 (prevention), docs/04 (section 24), docs/05 (section 14)
+# Doc:     docs/07 – 12 and 14 (prevention), docs/04 (section 24), docs/05 (section 14)
 # Run on:  kubespray VM as k8s
 # Usage:   ./daily-check.sh
 #
-# Read-only. Takes about one minute. Every problem names the runbook that explains
-# it. Exit code 0 = all checks passed (warnings do not count), so it can run from cron:
+# Read-only, except step 5: it writes and deletes a small test file (.iotest) in every
+# Longhorn volume that a pod has mounted. Takes about two minutes. Every problem names
+# the runbook that explains it. Exit code 0 = all checks passed (warnings do not
+# count), so it can run from cron:
 #   0 7 * * * $HOME/automation/ops/daily-check.sh > $HOME/daily-check.log 2>&1
 #
 #  1 Nodes            NotReady, cordoned after an aborted drain (10), memory usage
 #  2 On the nodes     nls_utf8 and linux-modules-extra for the newest kernel (04 F7),
 #                     disk, time, pending reboots, the API proxy (nginx-proxy) of
-#                     every worker knows all control plane nodes (13)
+#                     every worker knows all control plane nodes (13), fs-freeze
+#                     blocked in the QEMU guest agent (14)
 #  3 Pods, rollouts   ImagePullBackOff (08), Pending (09), OOMKilled/CrashLoop (11),
 #                     stuck Terminating (12), unfinished rollouts, deployments at 0
 #                     replicas and services without endpoints (07)
 #  4 Access           portal, files, idp; webmail, its API and dav (07)
-#  5 Storage          PVCs, Longhorn volumes and nodes (10, 12)
+#  5 Storage          PVCs, Longhorn volumes and nodes (10, 12), Longhorn mounts in the
+#                     pods writable (14)
 #  6 Certificates     Ready, renewal not overdue, CA expiry (04 section 24.1)
 #  7 Integrations     files_external, groupware group and OX access profiles
 #                     (05 F2/F3/F6), importer, split DNS and strictARP (03)
@@ -72,10 +76,10 @@ REMOTE='exec 2>/dev/null
 newest=$(dpkg-query -W -f="\${db:Status-Abbrev}\${Package}\n" "linux-image-[0-9]*" 2>/dev/null | awk "/^ii/ {sub(/^ii */, \"\"); sub(/^linux-image-/, \"\"); print}" | sort -V | tail -1)
 extra=$(dpkg-query -W -f="\${db:Status-Abbrev}" "linux-modules-extra-$newest" 2>/dev/null | grep -c "^ii")
 api=$(sudo -n sed -n "/upstream kube_apiserver/,/}/p" /etc/nginx/nginx.conf 2>/dev/null | grep -oE "[0-9.]+:6443" | sort -u | tr "\n" ,)
-echo "kernel=$(uname -r) newest=$newest extra=$extra nls=$(lsmod | grep -c "^nls_utf8") disk=$(df --output=pcent /var/lib | tail -1 | tr -dc 0-9) ntp=$(timedatectl show -p NTPSynchronized --value) reboot=$([ -f /var/run/reboot-required ] && echo yes || echo no) api=$api"'
+echo "kernel=$(uname -r) newest=$newest extra=$extra nls=$(lsmod | grep -c "^nls_utf8") disk=$(df --output=pcent /var/lib | tail -1 | tr -dc 0-9) ntp=$(timedatectl show -p NTPSynchronized --value) reboot=$([ -f /var/run/reboot-required ] && echo yes || echo no) qga=$(grep -c "^block-rpcs=.*guest-fsfreeze-freeze" /etc/qemu/qemu-ga.conf) api=$api"'
 facts="$(use_kubespray; ansible -i "$INV" all -m shell -a "$REMOTE" -o 2>/dev/null || true)"
 v() { grep -oE "(^| )$1=[^ ]*" <<<"$2" | cut -d= -f2; }
-bad_nls=""; bad_extra=""; bad_disk=""; bad_ntp=""; reboot=""; bad_api=""; seen=0
+bad_nls=""; bad_extra=""; bad_disk=""; bad_ntp=""; reboot=""; bad_api=""; bad_qga=""; seen=0
 while read -r line; do
   host="${line%% *}"
   if [[ "$line" != *"rc=0"* ]]; then bad_nls+=" $host(unreachable)"; continue; fi
@@ -91,6 +95,7 @@ while read -r line; do
   d="$(v disk "$line")"
   if [[ "${d:-0}" -ge 85 ]]; then bad_disk+=" $host(${d}%)"; elif [[ "${d:-0}" -ge 75 ]]; then note "$host: /var/lib ${d}% full"; fi
   [[ "$(v ntp "$line")" == yes ]]   || bad_ntp+=" $host"
+  [[ "$(v qga "$line")" -ge 1 ]]    || bad_qga+=" $host"
   [[ "$(v reboot "$line")" == no ]] || reboot+=" $host"
 done < <(grep -E '^[^ ]+ \| ' <<<"$facts")
 check "$seen of $expected nodes answer to Ansible" test "$seen" -eq "$expected"
@@ -99,6 +104,8 @@ check "linux-modules-extra for the newest kernel${bad_extra:+ – missing:$bad_e
 [[ -z "$bad_extra" ]] || info "      before the next reboot: ./04-identity/setup-smb-storage.sh (otherwise Nextcloud loses the mounts)"
 check "disk /var/lib below 85 %${bad_disk:+ –$bad_disk}" test -z "$bad_disk"
 check "clock synchronised${bad_ntp:+ – not:$bad_ntp}" test -z "$bad_ntp"
+check "fs-freeze blocked in the QEMU guest agent (backup, runbook 14)${bad_qga:+ – not:$bad_qga}" test -z "$bad_qga"
+[[ -z "$bad_qga" ]] || info "      fix: prepare-nodes.yml on these nodes (runbook 14, section 4.2)"
 check "nginx-proxy of the workers knows all ${#CP_NAMES[@]} control plane node(s)${bad_api:+ – not:$bad_api}" test -z "$bad_api"
 [[ -z "$bad_api" ]] || info "      fix: cluster.yml --limit=kube_node, then restart nginx-proxy on these workers (doc 13, section 7)"
 [[ -z "$reboot" ]] || note "reboot pending on:$reboot – one node at a time with drain/uncordon (runbook 10, section 4; control plane: doc 13)"
@@ -246,6 +253,13 @@ lnodes="$(kubectl -n longhorn-system get nodes.longhorn.io -o json | jq -r '.ite
   | select(([$c[] | select(.type == "Ready" or .type == "Schedulable") | .status] | unique) != ["True"] or .spec.allowScheduling != true)
   | $n')"
 check "Longhorn: all nodes READY and SCHEDULABLE${lnodes:+ – not: $(xargs <<<"$lnodes")}" test -z "$lnodes"
+# "healthy" in Longhorn does not prove that the file system in the pod still works (runbook 14)
+mounts="$("$(dirname "${BASH_SOURCE[0]}")/longhorn-mount-check.sh" 2>/dev/null || true)"
+mtested="$(sed -n 's/^Tested: \([0-9]*\) mounts$/\1/p' <<<"$mounts")"
+mbad="$(grep -E 'Input/output error|Read-only file system' <<<"$mounts" || true)"
+check "${mtested:-0} Longhorn mounts in the pods, all writable (runbook 14)" test -n "$mtested" -a -z "$mbad"
+list "$mbad"
+[[ -z "$mbad" ]] || info "      fix: delete these pods, they get a fresh mount (runbook 14, section 4.1)"
 
 # ------------------------------------------------------------------------------
 step "6/8 Certificates (doc 04 section 24.1, doc 05 section 14.3)"

@@ -122,7 +122,7 @@ qm create 9000 --name ubuntu2404-k8s-tpl \
   --memory 16384 --balloon 0 \
   --net0 virtio,bridge=k8snet,mtu=1 \
   --scsihw virtio-scsi-single --machine q35 \
-  --ostype l26 --agent enabled=1
+  --ostype l26 --agent enabled=1,freeze-fs-on-backup=0
 ```
 
 | Parameter | Effect |
@@ -134,7 +134,7 @@ qm create 9000 --name ubuntu2404-k8s-tpl \
 | `bridge=k8snet,mtu=1` | Network k8snet; `mtu=1` inherits the MTU of the bridge (1450) |
 | `--scsihw virtio-scsi-single` | One SCSI controller per disk, required for `iothread` |
 | `--machine q35` | Modern machine type (PCIe) |
-| `--agent enabled=1` | QEMU guest agent enabled (clean shutdown, IP shown in Proxmox) |
+| `--agent enabled=1,freeze-fs-on-backup=0` | QEMU guest agent enabled (clean shutdown, IP shown in Proxmox), but no fs-freeze during backups: it hangs Longhorn volumes ([14](14-backup-freeze-io-error.md)) |
 
 ### 2.4 Import the disk and resize it to 120 GB
 
