@@ -154,7 +154,7 @@ speicher-test-59b7f6dd65-bn64s   84m          150Mi
 > - The limit should be above the peak usage. The request must still fit on a node (see [09](09-pending-insufficient-memory.md)).
 > - For an openDesk component, the new value belongs in the helmfile configuration. Otherwise the next `helmfile apply` resets the old limit.
 
-## 4. Check in production: were there OOMKilled containers in openDesk?
+## 4. Check the running openDesk: were there OOMKilled containers?
 
 This check only reads and can be run at any time during normal operation.
 

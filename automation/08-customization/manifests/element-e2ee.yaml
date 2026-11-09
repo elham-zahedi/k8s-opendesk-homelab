@@ -1,8 +1,8 @@
 # Element: end-to-end encryption off (doc 15, section 3). Values file for the release
 # "opendeskWellKnown", only used with ELEMENT_E2EE_OFF=yes.
 #
-# An organisational decision, not a technical requirement: in the test phase the chat runs
-# without end-to-end encryption. Decide again before the real users are imported.
+# A decision, not a technical requirement: in this lab the chat runs without end-to-end
+# encryption. Decide again before the chat is used for confidential messages.
 # Element reads io.element.e2ee.force_disable from /.well-known/matrix/client.
 configuration:
   e2ee:

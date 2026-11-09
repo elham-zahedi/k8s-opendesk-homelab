@@ -2,7 +2,7 @@
 
 > Troubleshooting runbook. Previous: [14 – I/O errors after the nightly backup](14-backup-freeze-io-error.md) · Next: [16 – openDesk apps per AD group](16-app-access-by-ad-group.md) · Back to the [overview](../README.md)
 
-**Summary:** The second installation of this setup also runs OpenProject, Element (chat) and OX App Suite. Three things needed a setting that openDesk v1.17.2 does not offer in its own configuration: the SSRF protection of OpenProject blocked the internal ingress address, the chat had to run without end-to-end encryption during the test phase, and OX got a new `CREDSTORAGE_PASSCRYPT` on every upgrade. openDesk can pass extra values files to a single release with `customization.release.<release>`. [`configure-customization.sh`](../automation/08-customization/configure-customization.sh) writes the three files and lists them there.
+**Summary:** The second installation of this setup also runs OpenProject, Element (chat) and OX App Suite. Three things needed a setting that openDesk v1.17.2 does not offer in its own configuration: the SSRF protection of OpenProject blocked the internal ingress address, the chat should run without end-to-end encryption, and OX got a new `CREDSTORAGE_PASSCRYPT` on every upgrade. openDesk can pass extra values files to a single release with `customization.release.<release>`. [`configure-customization.sh`](../automation/08-customization/configure-customization.sh) writes the three files and lists them there.
 
 | Field | Value |
 |---|---|
@@ -64,7 +64,7 @@ helm -n opendesk get values openproject | grep SSRF
 
 ## 3. Element: end-to-end encryption off
 
-This is a decision, not a fix: in the test phase the chat runs without end-to-end encryption. It is only written with `ELEMENT_E2EE_OFF=yes` in `lab.env`, and it has to be decided again before the real users are imported.
+This is a decision, not a fix: in this lab the chat runs without end-to-end encryption. It is only written with `ELEMENT_E2EE_OFF=yes` in `lab.env`. Decide again before the chat is used for confidential messages.
 
 [`element-e2ee.yaml`](../automation/08-customization/manifests/element-e2ee.yaml) sets `configuration.e2ee.forceDisable: true` for the release `opendesk-well-known`. Element reads `io.element.e2ee.force_disable` from `/.well-known/matrix/client`:
 
