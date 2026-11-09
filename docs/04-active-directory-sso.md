@@ -1436,7 +1436,7 @@ unset TOKEN
 
 ### 19.5 Login page: openDesk design and direct login
 
-In a production installation, users typed their AD password into the form of the openDesk login page instead of pressing "Anmeldung mit AD-Konto". That form only knows the local openDesk accounts, so the login failed. Two changes avoid this:
+In the second installation, test users typed their AD password into the form of the openDesk login page instead of pressing "Anmeldung mit AD-Konto". That form only knows the local openDesk accounts, so the login failed. Two changes avoid this:
 
 1. **Direct login** (`IDP_ENFORCE=yes`, the default): `configure-sso.sh` sets `enforceFederatedLogin` to the key of the identity provider (`internIdP`). openDesk then skips its own form and sends every login straight to `https://idp.k8s.lab` – in Keycloak this is the "Identity Provider Redirector" with a default provider.
 2. **The same design on idp.k8s.lab** (`IDP_LOGIN_THEME=opendesk`, the default): the dedicated Keycloak has the same major version as the Keycloak of openDesk (26.x), so the openDesk theme `UCS` works there unchanged. `setup-keycloak-idp.sh` copies `/opt/keycloak/themes/UCS/login` from `ums-keycloak-0` into the ConfigMap `idp-login-theme`, mounts it as theme `opendesk` and passes the `UNIVENTION_*` variables of the openDesk Keycloak (addresses of `theme.css`, `custom.css` and the favicon on the portal). `configure-keycloak-realm.sh` sets the theme and the language `IDP_LOCALE` (German) for the realm `intern`.

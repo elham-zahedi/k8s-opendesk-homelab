@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 04 – openDesk apps per AD group: for every pair GROUP:ATTRIBUTE in APP_GROUPS, sets ATTRIBUTE
 #      of every user in ou=NUBUS_OU to true for the members of GROUP and to false for everyone
-#      else. Members of nested groups count too (e.g. OD-Pilot inside OD-Chat).
+#      else. Members of nested groups count too (e.g. OD-Test inside OD-Chat).
 #
 # Doc:     docs/16-app-access-by-ad-group.md
 # Run on:  kubespray VM as k8s – every 15 minutes from cron (--cron sets it up)

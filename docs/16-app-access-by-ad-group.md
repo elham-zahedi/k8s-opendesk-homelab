@@ -10,7 +10,7 @@
 | `OD-Projekte` | `opendeskProjectmanagementEnabled` | Projects (OpenProject) |
 | `OD-Projekte-Admin` | `opendeskProjectmanagementAdmin` | Administration in OpenProject |
 
-The pairs are in `APP_GROUPS` in `lab.env`. Groups can be nested: the pilot users are in a group `OD-Pilot`, which is a member of `OD-Chat` and `OD-Projekte`.
+The pairs are in `APP_GROUPS` in `lab.env`. Groups can be nested: e.g. the test users are in a group `OD-Test`, which is a member of `OD-Chat` and `OD-Projekte`.
 
 ## 1. Rules
 
