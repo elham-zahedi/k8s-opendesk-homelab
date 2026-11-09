@@ -1,0 +1,20 @@
+# OpenProject: SSRF protection (doc 15, section 2). Values file for the release "openproject",
+# written to CUSTOM_DIR by configure-customization.sh with @LB_IP@ replaced.
+#
+# OpenProject 17.6 blocks outgoing requests to private IP addresses (SSRF protection).
+# All openDesk hosts resolve to the internal ingress address, so exactly that address is
+# allowed: the login via Keycloak and the Nextcloud file storage need it.
+#
+# The seeder downloads the openDesk logos with CarrierWave, whose SSRF check ignores this
+# allowlist, and then the whole seed fails. So no logos are seeded: OpenProject keeps its
+# own logos, the openDesk colours are still set.
+environment:
+  OPENPROJECT_SSRF_PROTECTION_IP_ALLOWLIST: "@LB_IP@"
+  OPENPROJECT_SSRF__PROTECTION__IP__ALLOWLIST: "@LB_IP@"
+  OPENPROJECT_SEED_DESIGN_LOGO: ""
+  OPENPROJECT_SEED_DESIGN_LOGO__MOBILE: ""
+  OPENPROJECT_SEED_DESIGN_EXPORT__LOGO: ""
+  OPENPROJECT_SEED_DESIGN_EXPORT__COVER: ""
+  OPENPROJECT_SEED_DESIGN_EXPORT__FOOTER: ""
+  OPENPROJECT_SEED_DESIGN_FAVICON: ""
+  OPENPROJECT_SEED_DESIGN_TOUCH__ICON: ""
