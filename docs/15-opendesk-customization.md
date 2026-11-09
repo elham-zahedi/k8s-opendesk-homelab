@@ -1,6 +1,6 @@
 # 15 – openDesk Settings per Release: OpenProject, Element and OX
 
-> Troubleshooting runbook. Previous: [14 – I/O errors after the nightly backup](14-backup-freeze-io-error.md) · Back to the [overview](../README.md)
+> Troubleshooting runbook. Previous: [14 – I/O errors after the nightly backup](14-backup-freeze-io-error.md) · Next: [16 – openDesk apps per AD group](16-app-access-by-ad-group.md) · Back to the [overview](../README.md)
 
 **Summary:** The second installation of this setup also runs OpenProject, Element (chat) and OX App Suite. Three things needed a setting that openDesk v1.17.2 does not offer in its own configuration: the SSRF protection of OpenProject blocked the internal ingress address, the chat had to run without end-to-end encryption during the test phase, and OX got a new `CREDSTORAGE_PASSCRYPT` on every upgrade. openDesk can pass extra values files to a single release with `customization.release.<release>`. [`configure-customization.sh`](../automation/08-customization/configure-customization.sh) writes the three files and lists them there.
 
@@ -139,4 +139,4 @@ HELMFILE_SELECTOR=name=open-xchange ./03-opendesk/deploy-opendesk.sh
 
 ---
 
-Previous: [14 – I/O errors after the nightly backup](14-backup-freeze-io-error.md) · Back to the [overview](../README.md)
+Previous: [14 – I/O errors after the nightly backup](14-backup-freeze-io-error.md) · Next: [16 – openDesk apps per AD group](16-app-access-by-ad-group.md) · Back to the [overview](../README.md)

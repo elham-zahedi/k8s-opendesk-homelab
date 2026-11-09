@@ -2,7 +2,7 @@
 # ops – Daily check of the whole lab: everything that the runbooks 07 – 12 and 14 and
 #       the documents 03 – 06 found to break silently.
 #
-# Doc:     docs/07 – 12 and 14 (prevention), docs/04 (section 24), docs/05 (section 14)
+# Doc:     docs/07 – 12 and 14 (prevention), docs/04 (section 24), docs/05 (section 14), docs/16
 # Run on:  kubespray VM as k8s
 # Usage:   ./daily-check.sh
 #
@@ -25,7 +25,8 @@
 #                     pods writable (14)
 #  6 Certificates     Ready, renewal not overdue, CA expiry (04 section 24.1)
 #  7 Integrations     files_external, groupware group and OX access profiles
-#                     (05 F2/F3/F6), importer, split DNS and strictARP (03)
+#                     (05 F2/F3/F6), importer, sync of the app groups (16), split DNS
+#                     and strictARP (03)
 #  8 etcd             every member healthy, as many members as control plane nodes,
 #                     a leader (13), size, age of the newest backup
 #
@@ -306,6 +307,17 @@ if kubectl get namespace directory-importer >/dev/null 2>&1; then
   logs="$(kubectl -n directory-importer logs deployment/directory-importer --since=15m 2>/dev/null || true)"
   cycles="$(grep -c 'Sleeping' <<<"$logs" || true)"; errors="$(grep -cE ' ERROR |Traceback' <<<"$logs" || true)"
   check "Directory Importer: $cycles cycle(s) in 15 minutes, $errors error lines" test "$cycles" -ge 1 -a "$errors" -eq 0
+fi
+if crontab -l 2>/dev/null | grep -q 'sync-app-groups'; then
+  synclog="${SYNC_LOG:-$HOME/logs/sync-app-groups.log}"
+  last="$(grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:]{8} sync-app-groups:' "$synclog" 2>/dev/null | grep -v '(dry run)' | tail -1 || true)"
+  if [[ -z "$last" ]]; then
+    check "app groups: no summary line of sync-app-groups.sh in $synclog (doc 16)" false
+  else
+    mins=$(( ($(date +%s) - $(date -d "${last:0:19}" +%s)) / 60 ))
+    check "app groups: last sync $mins minute(s) ago – ${last#* sync-app-groups: } (doc 16)" test "$mins" -le 30
+    [[ "$last" == *", 0 group(s) skipped"* ]] || note "sync-app-groups.sh skipped a group – see $synclog (doc 16)"
+  fi
 fi
 corefile="$(kubectl -n kube-system get cm coredns -o jsonpath='{.data.Corefile}')"
 block="$(awk -v d="$DOMAIN" '!f && index($0, d) && /\{/ {f=1}

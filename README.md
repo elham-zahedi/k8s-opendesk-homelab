@@ -11,7 +11,7 @@ Every build step is documented with the exact commands, the expected results and
 - **DNS:** split DNS – only the cluster and AD zones are forwarded to the domain controller (CoreDNS and NodeLocal DNSCache)
 - **Storage:** Longhorn (iSCSI) for persistent volumes, SMB CSI driver for the Windows file server shares
 - **Applications:** openDesk v1.17.2 deployed with helmfile – Nubus portal, Nextcloud, Collabora Online, OX App Suite (mail, calendar, contacts)
-- **Identity:** 500 users and 22 groups imported from Active Directory; "Login with AD account" via a dedicated Keycloak (LDAPS federation, OIDC)
+- **Identity:** 500 users and 22 groups imported from Active Directory; "Login with AD account" via a dedicated Keycloak (LDAPS federation, OIDC); access to the apps managed with AD groups
 - **Operations:** etcd snapshots before every change, adding and replacing worker nodes, failure drills
 
 ## Architecture
@@ -71,6 +71,7 @@ flowchart LR
 | 05 | [OX App Suite](docs/05-ox-app-suite.md) | Mail, calendar and contacts for 500 AD users |
 | 06 | [Adding a worker node](docs/06-add-worker-node.md) | Joining node6 with `scale.yml`, fixing a stale fact cache |
 | 13 | [Three control plane nodes](docs/13-three-control-plane-nodes.md) | VMs spread over three Proxmox hosts, two more control plane and etcd nodes with Kubespray, failover test |
+| 16 | [openDesk apps per AD group](docs/16-app-access-by-ad-group.md) | Chat and projects only for the members of AD groups (nested groups included), synchronized every 15 minutes from cron |
 
 ### Troubleshooting runbooks
 
