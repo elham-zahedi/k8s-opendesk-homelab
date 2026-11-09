@@ -27,6 +27,7 @@ All names (domain, DC, OUs, service accounts, shares, realm) are in section "04"
 | 15a | `configure-selfservice.sh` | Self-service for AD accounts: password change and reset off, profile only photo – values file for Nubus, menu entries, profile fields of the running `umc-server` | Yes; the values file takes effect with the next rollout of `ums` |
 | 16 | `verify-sso.sh` | Keycloak, issuer from outside and from a pod, certificates, users in the realm, client, secret, login page (design, language), identity provider in openDesk, direct login without the openDesk form | No (test pod) |
 | 17 | `../windows/set-test-passwords.ps1` (DC) | Test password for the browser test; `-RequireChangeAtLogon` afterwards | Yes |
+| 18 | `sync-app-groups.sh` | openDesk apps per AD group (doc 16): sets the app attributes of `APP_GROUPS` from the group memberships, nested groups included; `--cron` sets up the run every 15 minutes | Only the differences |
 
 The browser test with one login per test account stays manual (doc 04, section 20).
 
@@ -43,6 +44,7 @@ Passwords of the AD service accounts are asked for (hidden input) only when the 
 | openDesk CA renewed by cert-manager | `setup-keycloak-idp.sh`, then `../03-opendesk/export-ca.sh` and `../windows/import-ca.ps1` |
 | Every rollout (`helmfile apply`) | `../ops/post-rollout.sh` – enables `files_external` again, hides the self-service password entries, restores the direct login and runs the checks |
 | openDesk update | `patch-nextcloud-volumes.sh`, `nc-mounts.sh` (only `SKIP`), then `../ops/post-rollout.sh`; `setup-keycloak-idp.sh --dry-run` – if openDesk changed its login design, copy it again with `--force` (Keycloak restarts, about 1 minute) |
+| App groups renamed or a new app group | `APP_GROUPS` in `lab.env`, then `sync-app-groups.sh --dry-run` (doc 16, section 5) |
 | A local openDesk account (e.g. the Nubus Administrator) must log in in the browser | `IDP_ENFORCE=no` in `lab.env`, `configure-sso.sh --force`, roll out `opendesk-keycloak-bootstrap` – and back to `yes` afterwards |
 
 ## Testing on a running lab
@@ -61,5 +63,6 @@ Passwords of the AD service accounts are asked for (hidden input) only when the 
 ./04-identity/configure-keycloak-realm.sh --dry-run
 ./04-identity/configure-sso.sh --dry-run
 ./04-identity/configure-selfservice.sh --dry-run
+./04-identity/sync-app-groups.sh --dry-run          # expect: 0 change(s), 0 group(s) skipped
 ./04-identity/verify-sso.sh
 ```
