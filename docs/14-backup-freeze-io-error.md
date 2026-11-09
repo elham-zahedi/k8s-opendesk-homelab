@@ -1,6 +1,6 @@
 # 14 – I/O Errors after the Nightly Backup
 
-> Troubleshooting runbook. Previous: [13 – Three control plane nodes](13-three-control-plane-nodes.md) · Back to the [overview](../README.md)
+> Troubleshooting runbook. Previous: [13 – Three control plane nodes](13-three-control-plane-nodes.md) · Next: [15 – openDesk settings per release](15-opendesk-customization.md) · Back to the [overview](../README.md)
 
 **Summary:** In the second installation of this setup, PostgreSQL stopped on the evening of 04.11.2026 with `Input/output error` on its Longhorn volume. The cause was the nightly Proxmox backup: it froze the file systems of the Kubernetes nodes through the QEMU guest agent. Since the VMs were spread over three Proxmox hosts ([13](13-three-control-plane-nodes.md)), the hosts back up in parallel, and two nodes were frozen at the same time. Each freeze waited for the other node, both hung for about nine minutes, and Longhorn gave up on the replicas. Three more pods had broken mounts, although Longhorn showed every volume as `healthy`. The fix: the guest agent on the nodes no longer accepts the freeze command, and the VMs are set to back up without freezing.
 
@@ -177,4 +177,4 @@ Longhorn reports the state of the volume: its engine and its replicas. After the
 
 ---
 
-Previous: [13 – Three control plane nodes](13-three-control-plane-nodes.md) · Back to the [overview](../README.md)
+Previous: [13 – Three control plane nodes](13-three-control-plane-nodes.md) · Next: [15 – openDesk settings per release](15-opendesk-customization.md) · Back to the [overview](../README.md)

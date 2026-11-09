@@ -7,3 +7,5 @@ kubeconfig*
 admin.conf
 # Backups of local files (e.g. lab.env.bak-20261102-0854)
 *.bak-*
+# Values files with secrets (doc 15) are written outside the repository – never commit a copy
+*passcrypt*.yaml
