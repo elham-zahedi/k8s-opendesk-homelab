@@ -85,10 +85,11 @@ Each runbook follows the same structure: **symptom → step-by-step diagnosis �
 | 11 | [Container keeps restarting – OOMKilled](docs/11-oomkilled.md) | Memory limit too low, exit code 137, kernel OOM log |
 | 12 | [Worker node failure and replacement](docs/12-node-failure-replace-worker.md) | Hard power-off, StatefulSet volume handover, node replacement |
 | 14 | [I/O errors after the nightly backup](docs/14-backup-freeze-io-error.md) | Proxmox backup froze two nodes at the same time (guest agent fs-freeze), Longhorn timed out |
+| 15 | [openDesk settings per release](docs/15-opendesk-customization.md) | OpenProject SSRF protection blocked the ingress address; OX got a new `CREDSTORAGE_PASSCRYPT` on every upgrade (reported upstream, fixed in v1.20.0); chat without end-to-end encryption by decision |
 
 ## Automation
 
-The [`automation/`](automation/) folder contains Bash scripts that rebuild the lab step by step – one folder per document, with a central settings file, `--dry-run` for every script and read-only `verify-*.sh` checks. Sections 01 – 06 (Proxmox template, Kubespray cluster, platform services and openDesk, Active Directory and SSO, OX App Suite, adding a worker) are tested in the lab, together with a daily check that covers the prevention steps of the runbooks 07 – 12 and 14.
+The [`automation/`](automation/) folder contains Bash scripts that rebuild the lab step by step – one folder per document, with a central settings file, `--dry-run` for every script and read-only `verify-*.sh` checks. Sections 01 – 06 (Proxmox template, Kubespray cluster, platform services and openDesk, Active Directory and SSO, OX App Suite, adding a worker) are tested in the lab, together with a daily check that covers the prevention steps of the runbooks 07 – 12 and 14. Section 08 writes the per-release settings of runbook 15.
 
 ## Lessons learned
 

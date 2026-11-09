@@ -26,6 +26,7 @@ cp lab.env.example lab.env        # adjust names, IP addresses and versions
 | 05 | [`05-ox`](05-ox/) | kubespray VM (k8s) | `enable-ox.sh`, `verify-ox.sh`, `reapply-ox-access.sh` | [05 – OX App Suite](../docs/05-ox-app-suite.md) | ✔ Tested 20.10.2026 on the running lab⁴ |
 | 06 | [`06-add-worker`](06-add-worker/) | kubespray VM (k8s), Proxmox host (root) | `precheck-worker.sh`, `create-worker-vm.sh`, `add-worker.sh`, `verify-worker.sh` | [06 – Adding a worker node](../docs/06-add-worker-node.md) | ✔ Tested 20.10.2026 on the running lab⁵ |
 | 07 | [`07-control-plane`](07-control-plane/) | Proxmox host (root), kubespray VM (k8s) | `verify-control-plane.sh` – the playbooks are run by hand, step by step | [13 – Three control plane nodes](../docs/13-three-control-plane-nodes.md) | ✔ Procedure carried out 02.11.2026 on a second installation⁷ |
+| 08 | [`08-customization`](08-customization/) | kubespray VM (k8s) | `configure-customization.sh` | [15 – openDesk settings per release](../docs/15-opendesk-customization.md) | ✔ Tested 09.11.2026 on a second installation⁸ |
 | – | [`ops`](ops/) | kubespray VM (k8s) | `daily-check.sh`, `etcd-backup.sh`, `post-rollout.sh` | 03 – 13 | ✔ Tested 20.10.2026⁴ ⁶ |
 | – | [`windows`](windows/) | DC, file server, workstation | `ad-inventory.ps1`, `test-service-accounts.ps1`, `set-test-passwords.ps1`, `fs-inventory.ps1`, `import-ca.ps1` | [03](../docs/03-opendesk-deployment.md), [04](../docs/04-active-directory-sso.md) | Not tested yet |
 
@@ -42,6 +43,8 @@ cp lab.env.example lab.env        # adjust names, IP addresses and versions
 ⁶ `daily-check` was run against the live lab: 31/31 checks. The first run reported two Nubus LDAP components that are at 0 replicas by configuration and two services without pods as failures. The script now reads from the managedFields who set the replicas (Helm = configuration, kubectl = runbook 07) and only reports a service without endpoints if its pods exist but are not ready, or if an ingress route to it fails.
 
 ⁷ On a second installation with all VMs on one Proxmox host: the workers were spread over three hosts with live migration, two control plane nodes were added with `cluster.yml` and `upgrade-cluster.yml` (both limited to `etcd,kube_control_plane`) and `cluster.yml --limit=kube_node`, and the first control plane node was shut down for a failover test – openDesk kept running. `verify-control-plane.sh` and the new checks in `daily-check.sh` (etcd members, nginx-proxy of the workers) were written afterwards from these steps.
+
+⁸ On a second installation where the three files already existed: `configure-customization --dry-run` and a normal run (both files "same content as the manifest", the OX value pinned, every file listed, nothing changed), plus the checks of doc 15 (`helm get values openproject` shows both SSRF variables, `/.well-known/matrix/client` shows `force_disable: true`). Writing new files and adding entries to the configuration were tested against a simulated openDesk configuration and a simulated `kubectl`.
 
 ## Daily operation
 
