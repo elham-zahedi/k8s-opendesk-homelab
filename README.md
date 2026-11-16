@@ -87,6 +87,7 @@ Each runbook follows the same structure: **symptom â†’ step-by-step diagnosis â†
 | 12 | [Worker node failure and replacement](docs/12-node-failure-replace-worker.md) | Hard power-off, StatefulSet volume handover, node replacement |
 | 14 | [I/O errors after the nightly backup](docs/14-backup-freeze-io-error.md) | Proxmox backup froze two nodes at the same time (guest agent fs-freeze), Longhorn timed out |
 | 15 | [openDesk settings per release](docs/15-opendesk-customization.md) | OpenProject SSRF protection blocked the ingress address; OX got a new `CREDSTORAGE_PASSCRYPT` on every upgrade (reported upstream, fixed in v1.20.0); chat without end-to-end encryption by decision |
+| 17 | [Empty app menu (9 dots) in the apps](docs/17-empty-app-menu.md) | Stale sessions of the Intercom Service in Redis after a rollout or an outage, tokens could not be renewed |
 
 ## Automation
 

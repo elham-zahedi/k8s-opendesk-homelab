@@ -1,6 +1,6 @@
 # 16 – openDesk Apps per AD Group
 
-> Part 16 of the series. Previous: [15 – openDesk settings per release](15-opendesk-customization.md) · Back to the [overview](../README.md)
+> Part 16 of the series. Previous: [15 – openDesk settings per release](15-opendesk-customization.md) · Next: [17 – Empty app menu](17-empty-app-menu.md) · Back to the [overview](../README.md)
 
 **Summary:** openDesk shows an app such as the chat or the projects only to users whose Nubus account has the matching attribute, e.g. `opendeskLivecollaborationEnabled` for the chat. The Directory Importer of [04](04-active-directory-sso.md) brings users and groups from AD, but it does not set these attributes from a group membership. In the second installation of this setup the access to the apps is therefore managed with AD groups: [`sync-app-groups.sh`](../automation/04-identity/sync-app-groups.sh) sets the attribute to `true` for every member of a group – also through nested groups – and to `false` for everyone else. It runs every 15 minutes from cron.
 
@@ -88,4 +88,4 @@ The order matters: as long as the new groups are not in Nubus, the script skips 
 
 ---
 
-Previous: [15 – openDesk settings per release](15-opendesk-customization.md) · Back to the [overview](../README.md)
+Previous: [15 – openDesk settings per release](15-opendesk-customization.md) · Next: [17 – Empty app menu](17-empty-app-menu.md) · Back to the [overview](../README.md)

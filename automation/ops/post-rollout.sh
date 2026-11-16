@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ops – Mandatory repairs and checks after every rollout (helmfile apply).
 #
-# Doc:     docs/05-ox-app-suite.md (sections 7, 8 and 14.1), docs/04 (section 24.4)
+# Doc:     docs/05-ox-app-suite.md (sections 7, 8 and 14.1), docs/04 (section 24.4), docs/17
 # Run on:  kubespray VM as k8s
 # Usage:   ./post-rollout.sh [--dry-run]
 #
@@ -17,7 +17,10 @@
 # 4. Direct login: a rollout of "ums" also resets the redirect to the dedicated Keycloak
 #    (IDP_ENFORCE=yes). If the openDesk login form is back, the release
 #    opendesk-keycloak-bootstrap is rolled out again with helmfile sync (doc 04, 19.5).
-# 5. Runs the checks for Nextcloud files (mount list NC_MOUNTS_CSV), SSO and – if
+# 5. ICS sessions: sessions of the Intercom Service whose tokens could not be renewed
+#    stay in Redis and leave the 9-dot menu of the apps empty (doc 17). The stale ones
+#    are deleted with ops/ics-sessions.sh --clean.
+# 6. Runs the checks for Nextcloud files (mount list NC_MOUNTS_CSV), SSO and – if
 #    enabled – OX App Suite.
 
 # shellcheck source=../lib/common.sh
@@ -33,7 +36,7 @@ use_kubectl
 VALUES="$OPENDESK_DIR/helmfile/environments/$OPENDESK_ENV/values.yaml.gotmpl"
 OX_ENABLED="$(yq '.apps.oxAppSuite.enabled // false' "$VALUES")"
 
-step "1/5 files_external in Nextcloud"
+step "1/6 files_external in Nextcloud"
 nextcloud_pod
 if occ app:list --output=json | jq -e '.enabled | has("files_external")' >/dev/null; then
   ok "files_external is enabled"
@@ -43,7 +46,7 @@ else
   [[ "$DRY_RUN" == 1 ]] || info "mounts: $(occ files_external:list --output=json | jq length)"
 fi
 
-step "2/5 Members of $GROUPWARE_GROUP"
+step "2/6 Members of $GROUPWARE_GROUP"
 if [[ "$OX_ENABLED" != true ]]; then
   info "OX App Suite is not enabled – skipped"
 else
@@ -68,13 +71,13 @@ else
   fi
 fi
 
-step "3/5 Self-service of the portal"
+step "3/6 Self-service of the portal"
 results=()
 dry=(); [[ "$DRY_RUN" == 1 ]] && dry=(--dry-run)
 if "$AUTOMATION_DIR/04-identity/configure-selfservice.sh" "${dry[@]}"; then results+=("ok 04-identity/configure-selfservice.sh")
 else results+=("failed 04-identity/configure-selfservice.sh"); fi
 
-step "4/5 Direct login to $IDP_ALIAS (IDP_ENFORCE=$IDP_ENFORCE)"
+step "4/6 Direct login to $IDP_ALIAS (IDP_ENFORCE=$IDP_ENFORCE)"
 straight() { grep -q "/broker/$IDP_ALIAS/login" <<<"$(portal_login_redirect)"; }
 if [[ "$IDP_ENFORCE" != yes ]]; then
   info "IDP_ENFORCE is not yes – the openDesk login form stays"
@@ -97,7 +100,11 @@ else
   fi
 fi
 
-step "5/5 Checks"
+step "5/6 Sessions of the Intercom Service (doc 17)"
+if "$AUTOMATION_DIR/ops/ics-sessions.sh" --clean "${dry[@]}"; then results+=("ok ops/ics-sessions.sh --clean")
+else results+=("failed ops/ics-sessions.sh --clean"); fi
+
+step "6/6 Checks"
 [[ "$DRY_RUN" == 1 ]] && { info "skipped with --dry-run"; exit 0; }
 scripts=(04-identity/verify-nextcloud-files.sh 04-identity/verify-sso.sh)
 [[ "$OX_ENABLED" == true ]] && scripts+=(05-ox/verify-ox.sh)
