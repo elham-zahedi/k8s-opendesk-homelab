@@ -556,7 +556,7 @@ kubectl -n directory-importer get pods -o wide
 | `repeatDelay: 300` | Sync every 5 minutes |
 | `*_primary_key_property: reservedLegacyExternalIamIdentifier` | The AD `objectGUID` (as UUID) identifies an object, so renamed accounts and groups are updated, not created again. The property can only be set once |
 | `user_properties`, `group_properties` | Written out because the importer empties every listed property that the source does not deliver – the default lists contain `univentionObjectIdentifier`, which must stay untouched since openDesk 1.18 ([18](18-directory-importer-opendesk-1-18.md)) |
-| `deletion_grace_period_days: 3650` | Objects removed from AD are not deleted automatically; deleting stays a manual decision (the first version used 7 days). Needs the UDM property `directoryImporterDeprovisionedAt` – missing in the second installation (open item in [18](18-directory-importer-opendesk-1-18.md)) |
+| `deletion_grace_period_days: 3650` | Objects removed from AD are not deleted automatically; deleting stays a manual decision (the first version used 7 days). Needs the extended attribute `directoryImporterDeprovisionedAt`, which `setup-directory-importer.sh` creates ([18](18-directory-importer-opendesk-1-18.md), section 6) |
 | `OU=Services` | Outside both search bases – service accounts and `G-Nextcloud-Dienst` are not imported |
 
 ## 8. Acceptance of the importer
