@@ -407,6 +407,8 @@ unset UDM_PW
 
 **Run on:** kubespray VM as k8s, in `~`
 
+> **openDesk 1.18 and later:** the configuration below is the current one. Since openDesk 1.18, `univentionObjectIdentifier` belongs to Nubus and the importer keeps the AD ID in `reservedLegacyExternalIamIdentifier` (changed on 17.11.2026). Up to openDesk 1.17 both primary keys and `rename_attrs` used `univentionObjectIdentifier`. Upgrading an existing installation: [18](18-directory-importer-opendesk-1-18.md).
+
 ```bash
 mkdir -p ~/directory-importer
 cat > ~/directory-importer/custom-values.yaml <<'EOF'
@@ -433,9 +435,44 @@ configFile:
     skip_writes: false
     user_ou: "ou=intern-ad"
     group_ou: "ou=intern-ad"
-    user_primary_key_property: "univentionObjectIdentifier"
-    group_primary_key_property: "univentionObjectIdentifier"
-    deletion_grace_period_days: 7
+    user_primary_key_property: "reservedLegacyExternalIamIdentifier"
+    group_primary_key_property: "reservedLegacyExternalIamIdentifier"
+    deletion_grace_period_days: 3650
+    user_properties:      # the importer defaults, univentionObjectIdentifier replaced
+      - "city"
+      - "country"
+      - "departmentNumber"
+      - "description"
+      - "e-mail"
+      - "employeeNumber"
+      - "employeeType"
+      - "firstname"
+      - "homePostalAddress"
+      - "homeTelephoneNumber"
+      - "initials"
+      - "jpegPhoto"
+      - "lastname"
+      - "mailPrimaryAddress"
+      - "mobileTelephoneNumber"
+      - "organisation"
+      - "phone"
+      - "physicalDeliveryOfficeName"
+      - "postOfficeBox"
+      - "postcode"
+      - "preferredDeliveryMethod"
+      - "preferredLanguage"
+      - "roomNumber"
+      - "secretary"
+      - "street"
+      - "title"
+      - "username"
+      - "reservedLegacyExternalIamIdentifier"
+    group_properties:
+      - "name"
+      - "description"
+      - "users"
+      - "nestedGroup"
+      - "reservedLegacyExternalIamIdentifier"
   source:
     ldap_uri: "ldaps://AD-DC.lab.local"
     bind_dn: "svc-nubus-import@lab.local"
@@ -460,7 +497,7 @@ configFile:
           - univention.directory_importer.sanitize:mail_sanitizer
           - bytes.lower
       rename_attrs:
-        univentionObjectIdentifier: "objectGUID"
+        reservedLegacyExternalIamIdentifier: "objectGUID"
         username: "sAMAccountName"
         firstname: "givenName"
         lastname: "sn"
@@ -484,7 +521,7 @@ configFile:
         objectGUID:
           - univention.directory_importer.sanitize:guid2uuid
       rename_attrs:
-        univentionObjectIdentifier: "objectGUID"
+        reservedLegacyExternalIamIdentifier: "objectGUID"
         name: "cn"
         users: "member"
       remove_attrs:
@@ -517,7 +554,9 @@ kubectl -n directory-importer get pods -o wide
 | `group_filter: cn=G-*` | Only the 22 global groups; the DL-FS groups only contain groups (AGDLP) and would arrive empty |
 | `compose_attrs mailPrimaryAddress` | `mail` from AD, otherwise `<login name>@lab.local` |
 | `repeatDelay: 300` | Sync every 5 minutes |
-| `deletion_grace_period_days: 7` | Objects removed from AD are deleted only after 7 days |
+| `*_primary_key_property: reservedLegacyExternalIamIdentifier` | The AD `objectGUID` (as UUID) identifies an object, so renamed accounts and groups are updated, not created again. The property can only be set once |
+| `user_properties`, `group_properties` | Written out because the importer empties every listed property that the source does not deliver – the default lists contain `univentionObjectIdentifier`, which must stay untouched since openDesk 1.18 ([18](18-directory-importer-opendesk-1-18.md)) |
+| `deletion_grace_period_days: 3650` | Objects removed from AD are not deleted automatically; deleting stays a manual decision (the first version used 7 days). Needs the UDM property `directoryImporterDeprovisionedAt` – missing in the second installation (open item in [18](18-directory-importer-opendesk-1-18.md)) |
 | `OU=Services` | Outside both search bases – service accounts and `G-Nextcloud-Dienst` are not imported |
 
 ## 8. Acceptance of the importer
@@ -1819,6 +1858,7 @@ Only if the four shares will be used exclusively through Nextcloud from now on: 
 - After a reinstallation of openDesk: repeat parts B to D, distribute the new CA to the workstations.
 - Check the login via "Login with AD account"; `setup-keycloak-idp.sh --dry-run` shows whether openDesk changed its login design (section 19.5).
 - `ops/post-rollout.sh` after every rollout: it hides the self-service password entries again, checks the profile fields (section 19.6) and restores the direct login (section 19.5).
+- Upgrade from openDesk 1.17 or older to 1.18 or later: stop the importer **before** the upgrade and switch its configuration before starting it again – the upgrade replaces the AD IDs in `univentionObjectIdentifier` ([18](18-directory-importer-opendesk-1-18.md)).
 
 ### 24.5 What is still missing for production
 

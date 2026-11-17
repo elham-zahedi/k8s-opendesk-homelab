@@ -41,6 +41,7 @@ Passwords of the AD service accounts are asked for (hidden input) only when the 
 |---|---|
 | Kernel update (before rebooting the nodes) | `setup-smb-storage.sh` – installs `linux-modules-extra` also for the newest installed kernel |
 | Nubus administrator password changed | `setup-directory-importer.sh` – asks for the current password and updates the secret `udm-credentials` |
+| Upgrade from openDesk 1.17 or older to 1.18 or later | Before: scale the importer to 0. After the upgrade: `setup-directory-importer.sh --force` (the manifest uses `reservedLegacyExternalIamIdentifier`), then scale it up again. If the upgrade already ran with the old configuration: `restore-external-iam-identifier.py` (doc 18) |
 | openDesk CA renewed by cert-manager | `setup-keycloak-idp.sh`, then `../03-opendesk/export-ca.sh` and `../windows/import-ca.ps1` |
 | Every rollout (`helmfile apply`) | `../ops/post-rollout.sh` – enables `files_external` again, hides the self-service password entries, restores the direct login and runs the checks |
 | openDesk update | `patch-nextcloud-volumes.sh`, `nc-mounts.sh` (only `SKIP`), then `../ops/post-rollout.sh`; `setup-keycloak-idp.sh --dry-run` – if openDesk changed its login design, copy it again with `--force` (Keycloak restarts, about 1 minute) |
