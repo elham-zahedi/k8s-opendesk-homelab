@@ -36,12 +36,27 @@ code="$(kubectl -n "$NS" logs nettest 2>/dev/null || true)"
 check "reachable from a pod (HTTP ${code:-none})" test "$code" = 200
 
 step "2/4 Certificates"
-end="$(kubectl -n idp get secret idp-tls -o jsonpath='{.data.tls\.crt}' | base64 -d | openssl x509 -noout -enddate | cut -d= -f2)"
+idptls="$(kubectl -n idp get secret idp-tls -o json)"
+chain="$(jq -r '.data["tls.crt"]' <<<"$idptls" | base64 -d)"
+end="$(openssl x509 -noout -enddate <<<"$chain" | cut -d= -f2)"
 days=$(( ( $(date -d "$end" +%s) - $(date +%s) ) / 86400 ))
-check "certificate $IDP_FQDN valid for $days more days (renewed by cert-manager)" test "$days" -gt 0
-check "copy of the openDesk CA in idp is up to date (doc 04, section 24.1)" test \
-  "$(kubectl -n idp get secret opendesk-ca-copy -o jsonpath='{.data.tls\.crt}')" = \
-  "$(kubectl -n "$OPENDESK_NAMESPACE" get secret opendesk-certificates-ca-tls -o jsonpath='{.data.tls\.crt}')"
+if [[ -n "$(jq -r '.metadata.annotations["cert-manager.io/certificate-name"] // empty' <<<"$idptls")" ]]; then
+  renew="renewed by cert-manager"
+else
+  renew="own certificate – renew it by hand"
+fi
+check "certificate $IDP_FQDN valid for $days more days ($renew)" test "$days" -gt 0
+# The openDesk apps reach idp over HTTPS: its certificate must chain to the CA in opendesk-certificates-ca-tls
+cabundle="$(kubectl -n "$OPENDESK_NAMESPACE" get secret opendesk-certificates-ca-tls -o json | jq -r '.data["ca.crt"] // .data["tls.crt"] // empty' | base64 -d)"
+check "certificate $IDP_FQDN is trusted by the openDesk CA (opendesk-certificates-ca-tls)" \
+  openssl verify -CAfile <(printf '%s\n' "$cabundle") -untrusted <(printf '%s\n' "$chain") <(printf '%s\n' "$chain")
+if secret_exists idp opendesk-ca-copy; then   # only with the CA issuer of cert-manager in idp (doc 04, section 24.1)
+  check "copy of the openDesk CA in idp is up to date (doc 04, section 24.1)" test \
+    "$(kubectl -n idp get secret opendesk-ca-copy -o jsonpath='{.data.tls\.crt}')" = \
+    "$(kubectl -n "$OPENDESK_NAMESPACE" get secret opendesk-certificates-ca-tls -o jsonpath='{.data.tls\.crt}')"
+else
+  info "no copy of the openDesk CA in idp – not needed with an own certificate"
+fi
 
 step "3/4 Realm $IDP_REALM"
 kc_connect
