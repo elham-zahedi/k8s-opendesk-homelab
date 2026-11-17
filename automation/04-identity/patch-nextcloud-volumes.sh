@@ -6,8 +6,9 @@
 # Run on:  kubespray VM as k8s
 # Usage:   ./patch-nextcloud-volumes.sh [--dry-run]
 #
-# Changes helmfile/apps/nextcloud/values-nextcloud.yaml.gotmpl: the CA volume stays
-# conditional, one volume and mount per share in SMB_SHARES is added. The block is
+# Changes helmfile/apps/nextcloud/values-nextcloud.yaml.gotmpl: the CA volume keeps its
+# condition (certificate.selfSigned up to openDesk 1.18, trust.secret.mount from 1.19),
+# one volume and mount per share in SMB_SHARES is added. The block is
 # found by its content (patch-nextcloud-volumes.py), not by line numbers. A file that
 # already contains the volumes is left unchanged. The local change is saved as a patch
 # (PATCH_FILE) so it can be re-applied after an openDesk update with "git apply".
@@ -35,40 +36,13 @@ for n in "${names[@]}"; do grep -q "claimName: \"pvc-fs-$n\"" "$F" || missing=$(
 if [[ "$missing" -eq 0 ]]; then
   ok "already contains the volumes of all ${#names[@]} shares – left unchanged"
 else
-  {
-    cat <<'EOF'
-  extraVolumes:
-    {{- if .Values.certificate.selfSigned }}
-    - name: "trusted-cert-secret-volume"
-      secret:
-        secretName: "opendesk-certificates-ca-tls"
-        items:
-          - key: "ca.crt"
-            path: "ca-certificates.crt"
-    {{- end }}
-EOF
-    for n in "${names[@]}"; do
-      printf '    - name: "fs-%s"\n      persistentVolumeClaim:\n        claimName: "pvc-fs-%s"\n' "$n" "$n"
-    done
-    cat <<'EOF'
-  extraVolumeMounts:
-    {{- if .Values.certificate.selfSigned }}
-    - name: "trusted-cert-secret-volume"
-      mountPath: "/etc/ssl/certs/ca-certificates.crt"
-      subPath: "ca-certificates.crt"
-    {{- end }}
-EOF
-    for n in "${names[@]}"; do
-      printf '    - name: "fs-%s"\n      mountPath: "/mnt/fs-%s"\n' "$n" "$n"
-    done
-  } >"$TMP"
   if [[ "$DRY_RUN" == 1 ]]; then
     cp "$F" "$TMP.preview"; add_exit_hook "rm -f $TMP.preview"
-    python3 "$AUTOMATION_DIR/04-identity/patch-nextcloud-volumes.py" "$TMP.preview" "$TMP" | indent
+    python3 "$AUTOMATION_DIR/04-identity/patch-nextcloud-volumes.py" "$TMP.preview" "${names[@]}" | indent
     diff -u "$F" "$TMP.preview" | indent '    ' || true
   else
     run cp -p "$F" "$HOME/values-nextcloud.yaml.gotmpl.orig"
-    python3 "$AUTOMATION_DIR/04-identity/patch-nextcloud-volumes.py" "$F" "$TMP" | indent
+    python3 "$AUTOMATION_DIR/04-identity/patch-nextcloud-volumes.py" "$F" "${names[@]}" | indent
   fi
 fi
 
