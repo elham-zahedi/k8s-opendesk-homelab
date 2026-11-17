@@ -46,7 +46,8 @@ check "ox-connector: no error lines in 24 hours ($errors)" test "$errors" -eq 0
 
 step "3/6 Certificate and access"
 san="$(kubectl -n "$NS" get secret opendesk-certificates-tls -o jsonpath='{.data.tls\.crt}' | base64 -d | openssl x509 -noout -ext subjectAltName)"
-for h in webmail dav; do check "certificate contains $h.$DOMAIN" grep -q "DNS:$h.$DOMAIN" <<<"$san"; done
+# the name itself or a wildcard for the domain
+for h in webmail dav; do check "certificate contains $h.$DOMAIN" grep -qE "DNS:($h|\*)\.${DOMAIN//./\\.}(,|\s|$)" <<<"$san"; done
 for pair in webmail:302 dav:401 portal:301 files:302; do
   h="${pair%:*}"; want="${pair#*:}"
   got="$(curl -s -o /dev/null -m 10 -w '%{http_code}' --cacert "$OPENDESK_CA_FILE" "https://$h.$DOMAIN" || true)"

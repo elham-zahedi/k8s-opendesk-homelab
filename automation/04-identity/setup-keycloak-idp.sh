@@ -12,7 +12,8 @@
 # The database and admin passwords are generated once into KEYCLOAK_DB_PASSWORD_FILE
 # and KEYCLOAK_ADMIN_PASSWORD_FILE (chmod 600) and never replaced. When cert-manager
 # has renewed the openDesk CA, the copy in the namespace idp is updated and the
-# certificate of the Keycloak is issued again (doc 04, section 24.1).
+# certificate of the Keycloak is issued again (doc 04, section 24.1). An own certificate
+# in the secret idp-tls (not issued by cert-manager) is left unchanged.
 # With IDP_LOGIN_THEME set, the login page gets the design of the openDesk login page:
 # its theme is copied from the Keycloak of openDesk into the ConfigMap idp-login-theme
 # (doc 04, section 19.5). The realm uses it once configure-keycloak-realm.sh has run.
@@ -123,24 +124,31 @@ apply_manifest "$TMPD/keycloak-postgres.yaml"
 [[ "$DRY_RUN" == 1 ]] || kubectl -n "$NS" rollout status statefulset keycloak-postgres --timeout=5m | indent
 
 step "3/6 Copy of the openDesk CA and certificate for $IDP_FQDN"
-src="$(kubectl -n "$OPENDESK_NAMESPACE" get secret opendesk-certificates-ca-tls -o jsonpath='{.data.tls\.crt}')"
-cur="$(kubectl -n "$NS" get secret opendesk-ca-copy -o jsonpath='{.data.tls\.crt}' 2>/dev/null || true)"
-if [[ -n "$cur" && "$cur" == "$src" ]]; then
-  ok "opendesk-ca-copy is up to date"
+# An own certificate (e.g. from a company PKI) in idp-tls is left alone: no CA copy, no issuer.
+own_cert="$(kubectl -n "$NS" get secret idp-tls -o json 2>/dev/null \
+  | jq -r 'if .metadata.annotations["cert-manager.io/certificate-name"] then "" else "yes" end' || true)"
+if [[ "$own_cert" == yes ]]; then
+  ok "idp-tls is an own certificate (not from cert-manager) – left unchanged, renew it by hand"
 else
-  [[ -n "$cur" ]] && warn "the openDesk CA was renewed – updating the copy and issuing $IDP_FQDN again"
-  echo "  \$ copy secret $OPENDESK_NAMESPACE/opendesk-certificates-ca-tls -> $NS/opendesk-ca-copy (tls.crt, tls.key)"
-  if [[ "$DRY_RUN" != 1 ]]; then
-    kubectl -n "$OPENDESK_NAMESPACE" get secret opendesk-certificates-ca-tls -o json \
-      | jq --arg ns "$NS" '{apiVersion, kind, type, data: {"tls.crt": .data["tls.crt"], "tls.key": .data["tls.key"]},
-                           metadata: {name: "opendesk-ca-copy", namespace: $ns}}' \
-      | kubectl apply -f - >/dev/null
-    if [[ -n "$cur" ]]; then kubectl -n "$NS" delete secret idp-tls --ignore-not-found >/dev/null; fi
+  src="$(kubectl -n "$OPENDESK_NAMESPACE" get secret opendesk-certificates-ca-tls -o jsonpath='{.data.tls\.crt}')"
+  cur="$(kubectl -n "$NS" get secret opendesk-ca-copy -o jsonpath='{.data.tls\.crt}' 2>/dev/null || true)"
+  if [[ -n "$cur" && "$cur" == "$src" ]]; then
+    ok "opendesk-ca-copy is up to date"
+  else
+    [[ -n "$cur" ]] && warn "the openDesk CA was renewed – updating the copy and issuing $IDP_FQDN again"
+    echo "  \$ copy secret $OPENDESK_NAMESPACE/opendesk-certificates-ca-tls -> $NS/opendesk-ca-copy (tls.crt, tls.key)"
+    if [[ "$DRY_RUN" != 1 ]]; then
+      kubectl -n "$OPENDESK_NAMESPACE" get secret opendesk-certificates-ca-tls -o json \
+        | jq --arg ns "$NS" '{apiVersion, kind, type, data: {"tls.crt": .data["tls.crt"], "tls.key": .data["tls.key"]},
+                             metadata: {name: "opendesk-ca-copy", namespace: $ns}}' \
+        | kubectl apply -f - >/dev/null
+      if [[ -n "$cur" ]]; then kubectl -n "$NS" delete secret idp-tls --ignore-not-found >/dev/null; fi
+    fi
   fi
+  render_template "$M/idp-cert.yaml" IDP_FQDN >"$TMPD/idp-cert.yaml"
+  apply_manifest "$TMPD/idp-cert.yaml"
+  [[ "$DRY_RUN" == 1 ]] || kubectl -n "$NS" wait --for=condition=Ready certificate/idp-tls --timeout=2m >/dev/null
 fi
-render_template "$M/idp-cert.yaml" IDP_FQDN >"$TMPD/idp-cert.yaml"
-apply_manifest "$TMPD/idp-cert.yaml"
-[[ "$DRY_RUN" == 1 ]] || kubectl -n "$NS" wait --for=condition=Ready certificate/idp-tls --timeout=2m >/dev/null
 
 step "4/6 Login page in the openDesk design"
 render_template "$M/keycloak-values.yaml" IDP_URL IDP_FQDN >"$TMPD/keycloak-values.yaml"
