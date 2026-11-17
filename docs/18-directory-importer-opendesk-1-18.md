@@ -154,6 +154,21 @@ For an upgrade from openDesk 1.17 or older to 1.18 or later with the Directory I
 - **Default lists are part of the configuration.** The importer empties properties that are listed but not delivered by the source; changing the primary key without the property lists would have emptied the identifiers of all imported objects.
 - **Check before writing.** Each step ran as a dry run first, then for one object, then for all – the dry run found the recreated groups before anything was written.
 
-## 6. Open item
+## 6. Deletion grace period
 
-`deletion_grace_period_days` (3650 in [04](04-active-directory-sso.md), section 7) needs the UDM property `directoryImporterDeprovisionedAt` to mark removed accounts. In the second installation it does not exist (checked on 17.11.2026), so the grace period has no effect there yet. What the importer does with a removed AD account in that case is not tested yet.
+With `deletion_grace_period_days` above 0 (3650 in [04](04-active-directory-sso.md), section 7), the importer does not delete an account that is gone from AD right away. In the next cycle it disables the account and writes the time into the UDM property `directoryImporterDeprovisionedAt`; once the grace period has passed, it deletes the account. If the account comes back in AD first, the property is emptied and the account is enabled again. Groups have no grace period, they are deleted at once.
+
+The property is an extended attribute that the README of the importer creates with a helper script of its test setup; the script is not part of the image. In the second installation it was missing (found on 17.11.2026): the importer could not have marked a removed account, so the account would have stayed enabled in openDesk – login was still blocked, because it goes through AD.
+
+[`setup-directory-importer.sh`](../automation/04-identity/setup-directory-importer.sh) now creates it (step 2) when the grace period is above 0, and restarts the UDM REST API, which reads the extended attributes when it starts:
+
+| Setting | Value | Why |
+|---|---|---|
+| Position | `cn=custom attributes,cn=univention,<base>` | Outside `cn=opendesk`, so openDesk updates do not touch it |
+| Module | `users/user` | The grace period only applies to users |
+| Syntax | `string` | The importer writes `2026-11-17T12:00:00Z` (UTC) |
+| LDAP attribute | `univentionFreeAttribute20` (`DI_DEPROVISION_LDAP_ATTR`) | openDesk 1.18 uses 1, 2 and 14 |
+| `deleteObjectClass` | `false` | `reservedLegacyExternalIamIdentifier` uses the same object class `univentionFreeAttributes` – emptying the timestamp must not remove it |
+| `disableUDMWeb` | `true` | Like the property of openDesk: only the importer works with it |
+
+`verify-directory-importer.sh` checks that it exists. In the second installation it was created on 17.11.2026; afterwards a user showed the property (empty) and `disabled: False`.

@@ -70,7 +70,7 @@ else
 fi
 
 # ------------------------------------------------------------------------------
-step "2/5 Target OU ou=$NUBUS_OU and mail domain $AD_DOMAIN in Nubus"
+step "2/5 Target OU ou=$NUBUS_OU, mail domain $AD_DOMAIN and deletion grace period in Nubus"
 if [[ "$(udm_count "container/ou/?filter=$(urlencode "ou=$NUBUS_OU")")" -ge 1 ]]; then
   ok "OU $NUBUS_OU exists"
 else
@@ -90,6 +90,34 @@ else
     udm POST "mail/domain/" "{\"properties\":{\"name\":\"$AD_DOMAIN\"}}"
     [[ "$UDM_STATUS" == 201 ]] || die "creating the mail domain failed (HTTP $UDM_STATUS)"
     ok "mail domain created"
+  fi
+fi
+# With a deletion grace period the importer disables a removed account and writes the date
+# into this UDM property – without it, it cannot mark the account (doc 18, section 6).
+grace="$(yq '.configFile.udm.deletion_grace_period_days // 0' "$AUTOMATION_DIR/04-identity/manifests/directory-importer-values.yaml")"
+EA_NAME="directoryImporterDeprovisionedAt"
+EA_ATTR="${DI_DEPROVISION_LDAP_ATTR:-univentionFreeAttribute20}"
+if [[ "$grace" -le 0 ]]; then
+  info "deletion_grace_period_days is 0 – no extended attribute needed"
+elif [[ "$(udm_count "settings/extended_attribute/?filter=$(urlencode "name=$EA_NAME")")" -ge 1 ]]; then
+  ok "extended attribute $EA_NAME exists (deletion grace period $grace days)"
+elif [[ "$(udm_count "settings/extended_attribute/?filter=$(urlencode "ldapMapping=$EA_ATTR")")" -ge 1 ]]; then
+  die "$EA_ATTR is used by another extended attribute – set DI_DEPROVISION_LDAP_ATTR in lab.env to a free univentionFreeAttribute1 … 20"
+else
+  info "\$ POST settings/extended_attribute/ name=$EA_NAME ldapMapping=$EA_ATTR module=users/user"
+  if [[ "$DRY_RUN" != 1 ]]; then
+    udm POST "settings/extended_attribute/" "$(jq -n --arg n "$EA_NAME" --arg a "$EA_ATTR" \
+      --arg pos "cn=custom attributes,cn=univention,$NUBUS_BASE_DN" '{position: $pos, properties: {
+        name: $n, CLIName: $n, shortDescription: "Deprovisioned by the Directory Importer at",
+        longDescription: "Set by the Nubus Directory Importer when the account is no longer in the source directory (UTC). The account is disabled and deleted after deletion_grace_period_days; the value is removed if the account comes back.",
+        syntax: "string", module: ["users/user"], ldapMapping: $a, objectClass: "univentionFreeAttributes",
+        deleteObjectClass: false, mayChange: true, multivalue: false, valueRequired: false,
+        notEditable: false, doNotSearch: false, disableUDMWeb: true, tabName: "External IAM", groupName: "External IAM"}}')"
+    [[ "$UDM_STATUS" == 201 ]] || die "creating the extended attribute failed (HTTP $UDM_STATUS)"
+    ok "extended attribute $EA_NAME created"
+    # the UDM REST API reads the extended attributes when it starts
+    run kubectl -n "$OPENDESK_NAMESPACE" rollout restart deployment/ums-udm-rest-api
+    run kubectl -n "$OPENDESK_NAMESPACE" rollout status deployment/ums-udm-rest-api --timeout=180s
   fi
 fi
 
