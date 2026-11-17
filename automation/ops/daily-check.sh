@@ -23,7 +23,8 @@
 #  4 Access           portal, files, idp; webmail, its API and dav (07)
 #  5 Storage          PVCs, Longhorn volumes and nodes (10, 12), Longhorn mounts in the
 #                     pods writable (14)
-#  6 Certificates     Ready, renewal not overdue, CA expiry (04 section 24.1)
+#  6 Certificates     Ready, renewal not overdue, CA expiry (04 section 24.1); own
+#                     certificates (not from cert-manager) of the ingresses: expiry
 #  7 Integrations     files_external, groupware group and OX access profiles
 #                     (05 F2/F3/F6), importer, sync of the app groups (16), split DNS
 #                     and strictARP (03)
@@ -279,8 +280,28 @@ while IFS=$'\t' read -r id days ca; do
   fi
 done < <(jq -r '.items[] | select(.status.notAfter) | [.metadata.namespace + "/" + .metadata.name,
   (((.status.notAfter | fromdateiso8601) - now) / 86400 | floor), (.spec.isCA // false)] | @tsv' <<<"$certs")
-info "next expiries: $(jq -r '[.items[] | select(.status.notAfter) | {n: .metadata.name, d: (((.status.notAfter | fromdateiso8601) - now) / 86400 | floor)}]
+[[ "$(jq '.items | length' <<<"$certs")" -eq 0 ]] ||
+  info "next expiries: $(jq -r '[.items[] | select(.status.notAfter) | {n: .metadata.name, d: (((.status.notAfter | fromdateiso8601) - now) / 86400 | floor)}]
   | sort_by(.d) | .[:3] | map("\(.n) \(.d) d") | join(", ")' <<<"$certs")"
+# Own certificates: TLS secrets of the ingresses that cert-manager does not manage (e.g. a
+# certificate of the company PKI). Nobody renews them – warn OWN_CERT_WARN_DAYS before expiry.
+OWN_WARN="${OWN_CERT_WARN_DAYS:-60}"
+own=(); osoon=""
+while read -r ns name; do
+  [[ -n "$name" ]] || continue
+  sec="$(kubectl -n "$ns" get secret "$name" -o json 2>/dev/null)" || { osoon+="$ns/$name  secret missing"$'\n'; continue; }
+  [[ -z "$(jq -r '.metadata.annotations["cert-manager.io/certificate-name"] // empty' <<<"$sec")" ]] || continue
+  end="$(jq -r '.data["tls.crt"] // empty' <<<"$sec" | base64 -d 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)"
+  if [[ -z "$end" ]]; then osoon+="$ns/$name  no readable certificate"$'\n'; continue; fi
+  days=$(( ($(date -d "$end" +%s) - $(date +%s)) / 86400 ))
+  own+=("$ns/$name $days d")
+  [[ "$days" -ge "$OWN_WARN" ]] || osoon+="$ns/$name  expires in $days days ($end) – renew it by hand"$'\n'
+done < <(kubectl get ingress -A -o json | jq -r '[.items[] | .metadata.namespace as $ns | .spec.tls[]?.secretName // empty | "\($ns) \(.)"] | unique[]')
+if [[ ${#own[@]} -gt 0 || -n "$osoon" ]]; then
+  check "${#own[@]} own certificate(s) of the ingresses, none expires within $OWN_WARN days" test -z "$osoon"
+  list "${osoon%$'\n'}"
+  [[ ${#own[@]} -eq 0 ]] || info "own certificates: $(printf '%s, ' "${own[@]}" | sed 's/, $//')"
+fi
 
 # ------------------------------------------------------------------------------
 step "7/8 Integrations (doc 03, 04, 05)"
