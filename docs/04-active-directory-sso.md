@@ -765,6 +765,8 @@ kubectl -n opendesk delete pod smbtest
 
 This is the only change to a versioned file in the openDesk repository. The replacement works with line numbers, so check them first.
 
+> **Note:** [`patch-nextcloud-volumes.sh`](../automation/04-identity/patch-nextcloud-volumes.sh) does the same without line numbers. From openDesk 1.19 the block starts with `{{- if .Values.trust.secret.mount }}` and takes the secret name from `trust.secret.name`; the script keeps the condition and the CA lines the file has and only adds the shares (checked with 1.18.3 and 1.19.5 on 17.11.2026).
+
 **Run on:** kubespray VM as k8s, in `~/opendesk`
 
 ```bash
