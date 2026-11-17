@@ -88,6 +88,7 @@ Each runbook follows the same structure: **symptom â†’ step-by-step diagnosis â†
 | 14 | [I/O errors after the nightly backup](docs/14-backup-freeze-io-error.md) | Proxmox backup froze two nodes at the same time (guest agent fs-freeze), Longhorn timed out |
 | 15 | [openDesk settings per release](docs/15-opendesk-customization.md) | OpenProject SSRF protection blocked the ingress address; OX got a new `CREDSTORAGE_PASSCRYPT` on every upgrade (reported upstream, fixed in v1.20.0); chat without end-to-end encryption by decision |
 | 17 | [Empty app menu (9 dots) in the apps](docs/17-empty-app-menu.md) | Stale sessions of the Intercom Service in Redis after a rollout or an outage, tokens could not be renewed |
+| 18 | [Directory Importer after the upgrade to openDesk 1.18](docs/18-directory-importer-opendesk-1-18.md) | The upgrade replaced the AD IDs in `univentionObjectIdentifier`; the importer recreated the groups empty. IDs restored from the migration log, importer switched to `reservedLegacyExternalIamIdentifier` |
 
 ## Automation
 

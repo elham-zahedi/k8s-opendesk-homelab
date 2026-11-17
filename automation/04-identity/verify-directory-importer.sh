@@ -37,7 +37,8 @@ udm_connect
 pos="$(urlencode "ou=$NUBUS_OU,$NUBUS_BASE_DN")"
 users="$(udm_count "users/user/?position=$pos&scope=sub&properties=username")"
 groups="$(udm_count "groups/group/?position=$pos&scope=sub&filter=$(urlencode "cn=$AD_GROUP_PREFIX*")&properties=name")"
-info "users: $users, groups: $groups (removed AD accounts stay in Nubus for 7 days – deletion_grace_period_days)"
+grace="$(helm -n "$NS" get values directory-importer -o json 2>/dev/null | jq -r '.configFile.udm.deletion_grace_period_days // 0')"
+info "users: $users, groups: $groups (removed AD accounts stay in Nubus for $grace days – deletion_grace_period_days)"
 if [[ -n "${AD_EXPECTED_USERS:-}" ]]; then check "$AD_EXPECTED_USERS users imported"  test "$users" -eq "$AD_EXPECTED_USERS"
 else check "users imported" test "$users" -gt 0; fi
 if [[ -n "${AD_EXPECTED_GROUPS:-}" ]]; then check "$AD_EXPECTED_GROUPS groups imported" test "$groups" -eq "$AD_EXPECTED_GROUPS"

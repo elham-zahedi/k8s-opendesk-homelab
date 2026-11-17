@@ -22,9 +22,46 @@ configFile:
     skip_writes: false
     user_ou: "ou=@NUBUS_OU@"
     group_ou: "ou=@NUBUS_OU@"
-    user_primary_key_property: "univentionObjectIdentifier"
-    group_primary_key_property: "univentionObjectIdentifier"
-    deletion_grace_period_days: 7
+    user_primary_key_property: "reservedLegacyExternalIamIdentifier"
+    group_primary_key_property: "reservedLegacyExternalIamIdentifier"
+    deletion_grace_period_days: 3650
+    # Explicit lists = importer defaults with univentionObjectIdentifier replaced: the importer
+    # empties every listed property the source does not deliver (openDesk 1.18+).
+    user_properties:
+      - "city"
+      - "country"
+      - "departmentNumber"
+      - "description"
+      - "e-mail"
+      - "employeeNumber"
+      - "employeeType"
+      - "firstname"
+      - "homePostalAddress"
+      - "homeTelephoneNumber"
+      - "initials"
+      - "jpegPhoto"
+      - "lastname"
+      - "mailPrimaryAddress"
+      - "mobileTelephoneNumber"
+      - "organisation"
+      - "phone"
+      - "physicalDeliveryOfficeName"
+      - "postOfficeBox"
+      - "postcode"
+      - "preferredDeliveryMethod"
+      - "preferredLanguage"
+      - "roomNumber"
+      - "secretary"
+      - "street"
+      - "title"
+      - "username"
+      - "reservedLegacyExternalIamIdentifier"
+    group_properties:
+      - "name"
+      - "description"
+      - "users"
+      - "nestedGroup"
+      - "reservedLegacyExternalIamIdentifier"
   source:
     ldap_uri: "ldaps://@AD_DC_FQDN@"
     bind_dn: "@SVC_IMPORT_UPN@"
@@ -50,7 +87,7 @@ configFile:
           - univention.directory_importer.sanitize:mail_sanitizer
           - bytes.lower
       rename_attrs:
-        univentionObjectIdentifier: "objectGUID"
+        reservedLegacyExternalIamIdentifier: "objectGUID"
         username: "sAMAccountName"
         firstname: "givenName"
         lastname: "sn"
@@ -75,7 +112,7 @@ configFile:
         objectGUID:
           - univention.directory_importer.sanitize:guid2uuid
       rename_attrs:
-        univentionObjectIdentifier: "objectGUID"
+        reservedLegacyExternalIamIdentifier: "objectGUID"
         name: "cn"
         users: "member"
       remove_attrs:
