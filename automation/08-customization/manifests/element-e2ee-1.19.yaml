@@ -1,0 +1,10 @@
+# Element: end-to-end encryption off (doc 15, section 3; doc 19, section 3.4). Values file
+# for the release "element" (customization.release.opendeskElement), openDesk v1.19.0 and
+# later, only used with ELEMENT_E2EE_OFF=yes.
+#
+# A decision, not a technical requirement: in this lab the chat runs without end-to-end
+# encryption. Decide again before the chat is used for confidential messages.
+# The Matrix stack chart publishes the setting in /.well-known/matrix/client.
+wellKnownDelegation:
+  additional:
+    client: '{"io.element.e2ee": {"force_disable": true}}'
