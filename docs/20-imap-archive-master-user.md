@@ -173,6 +173,8 @@ kubectl -n opendesk get svc dovecot-external -o jsonpath='{.spec.loadBalancerSou
 
 ✔ **Expected:** `2`, then `["<archive IP>/32"] Local` without a node port. If the passdb block is missing, the chart has changed how it writes `login_trusted_networks`: the archive cannot log in, everything else keeps working. If the Service lost its patch, run section 4.1 again.
 
+The daily check ([`ops/daily-check.sh`](../automation/ops/daily-check.sh), step 7) does both checks on its own as soon as the Service `dovecot-external` exists.
+
 ## 7. Security notes
 
 - **The master user can read and write every mailbox.** The password belongs only into the archive server; it is handed over in person, not by mail or chat.

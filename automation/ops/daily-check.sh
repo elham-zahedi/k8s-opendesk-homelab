@@ -26,8 +26,8 @@
 #  6 Certificates     Ready, renewal not overdue, CA expiry (04 section 24.1); own
 #                     certificates (not from cert-manager) of the ingresses: expiry
 #  7 Integrations     files_external, groupware group and OX access profiles
-#                     (05 F2/F3/F6), importer, sync of the app groups (16), split DNS
-#                     and strictARP (03)
+#                     (05 F2/F3/F6), importer, sync of the app groups (16), IMAPS for
+#                     a mail archive if set up (20), split DNS and strictARP (03)
 #  8 etcd             every member healthy, as many members as control plane nodes,
 #                     a leader (13), size, age of the newest backup
 #
@@ -340,6 +340,17 @@ if crontab -l 2>/dev/null | grep -q 'sync-app-groups'; then
     check "app groups: last sync $mins minute(s) ago – ${last#* sync-app-groups: } (doc 16)" test "$mins" -le 30
     [[ "$last" == *", 0 group(s) skipped"* ]] || note "sync-app-groups.sh skipped a group – see $synclog (doc 16)"
   fi
+fi
+# IMAPS for a mail archive (doc 20): the Service limit is a kubectl patch and the master
+# passdb rides on a chart value - an openDesk update can drop either without an error
+if ext="$(kubectl -n "$OPENDESK_NAMESPACE" get svc dovecot-external -o json 2>/dev/null)"; then
+  ranges="$(jq -r '(.spec.loadBalancerSourceRanges // []) | join(" ")' <<<"$ext")"
+  etp="$(jq -r '.spec.externalTrafficPolicy // ""' <<<"$ext")"
+  nports="$(jq '[.spec.ports[] | select(.nodePort)] | length' <<<"$ext")"
+  check "IMAPS for the mail archive: only from ${ranges:-anywhere}, externalTrafficPolicy ${etp:-Cluster}, $nports node port(s) (doc 20, section 4.1)" \
+    test -n "$ranges" -a "$etp" = Local -a "$nports" -eq 0
+  masters="$(kubectl -n "$OPENDESK_NAMESPACE" get cm dovecot -o jsonpath='{.data.dovecot\.conf}' 2>/dev/null | grep -c 'master = yes' || true)"
+  check "IMAPS for the mail archive: master passdb in the Dovecot configuration (doc 20, section 6)" test "$masters" -ge 1
 fi
 corefile="$(kubectl -n kube-system get cm coredns -o jsonpath='{.data.Corefile}')"
 block="$(awk -v d="$DOMAIN" '!f && index($0, d) && /\{/ {f=1}
