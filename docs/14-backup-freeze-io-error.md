@@ -112,6 +112,14 @@ The backup error only names the first mount that failed on each node. Other pods
 
 Delete the pod; it gets a fresh mount (section 3, step 2). The daily check now runs `longhorn-mount-check.sh` and names such pods.
 
+Not every read-only mount is broken. Since openDesk 1.20 the `leader-elector` container of `ums-ldap-server-primary-0` mounts `/var/lib/univention-ldap` read-only on purpose; the `main` container of the same pod mounts it writable. Check the pod spec before you delete a pod:
+
+```bash
+kubectl -n opendesk get pod ums-ldap-server-primary-0 -o jsonpath='{range .spec.containers[*]}{.name}{": "}{range .volumeMounts[*]}{.mountPath}{" (readOnly="}{.readOnly}{") "}{end}{"\n"}{end}'
+```
+
+`readOnly=true` there means: by design, nothing to fix. `longhorn-mount-check.sh` skips such mounts and prints them as `Skipped`.
+
 ### 4.2 Block fs-freeze in the QEMU guest agent (works at once)
 
 `prepare-nodes.yml` writes `/etc/qemu/qemu-ga.conf` on every node:

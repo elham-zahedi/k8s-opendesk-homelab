@@ -258,8 +258,9 @@ check "Longhorn: all nodes READY and SCHEDULABLE${lnodes:+ – not: $(xargs <<<"
 # "healthy" in Longhorn does not prove that the file system in the pod still works (runbook 14)
 mounts="$("$(dirname "${BASH_SOURCE[0]}")/longhorn-mount-check.sh" 2>/dev/null || true)"
 mtested="$(sed -n 's/^Tested: \([0-9]*\) mounts$/\1/p' <<<"$mounts")"
+mskipped="$(sed -n 's/^Skipped: \([0-9]*\) mounts.*$/\1/p' <<<"$mounts")"
 mbad="$(grep -E 'Input/output error|Read-only file system' <<<"$mounts" || true)"
-check "${mtested:-0} Longhorn mounts in the pods, all writable (runbook 14)" test -n "$mtested" -a -z "$mbad"
+check "${mtested:-0} Longhorn mounts in the pods, all writable${mskipped:+ ($mskipped read-only by design, skipped)} (runbook 14)" test -n "$mtested" -a -z "$mbad"
 list "$mbad"
 [[ -z "$mbad" ]] || info "      fix: delete these pods, they get a fresh mount (runbook 14, section 4.1)"
 
