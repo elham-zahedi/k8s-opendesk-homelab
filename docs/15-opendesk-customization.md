@@ -64,6 +64,8 @@ helm -n opendesk get values openproject | grep SSRF
 
 ## 3. Element: end-to-end encryption off
 
+> **From openDesk 1.19:** the release `opendesk-well-known` no longer exists, and this file has no effect. The switch moved to the Matrix stack: see [19](19-opendesk-upgrade-1-20.md), section 3.4, for the values file under `customization.release.opendeskElement`. `configure-customization.sh` still writes the variant for 1.17 and 1.18.
+
 This is a decision, not a fix: in this lab the chat runs without end-to-end encryption. It is only written with `ELEMENT_E2EE_OFF=yes` in `lab.env`. Decide again before the chat is used for confidential messages.
 
 [`element-e2ee.yaml`](../automation/08-customization/manifests/element-e2ee.yaml) sets `configuration.e2ee.forceDisable: true` for the release `opendesk-well-known`. Element reads `io.element.e2ee.force_disable` from `/.well-known/matrix/client`:

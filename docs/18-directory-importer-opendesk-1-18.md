@@ -1,6 +1,6 @@
 # 18 – Directory Importer After the Upgrade to openDesk 1.18
 
-> Troubleshooting runbook. Previous: [17 – Empty app menu](17-empty-app-menu.md) · Back to the [overview](../README.md)
+> Troubleshooting runbook. Previous: [17 – Empty app menu](17-empty-app-menu.md) · Next: [19 – Upgrading openDesk to 1.20](19-opendesk-upgrade-1-20.md) · Back to the [overview](../README.md)
 
 **Summary:** After the upgrade from openDesk 1.17.2 to 1.18.3 in the second installation, the Directory Importer ([04](04-active-directory-sso.md), part B) no longer found the users and groups it had imported. openDesk 1.18 sets `univentionObjectIdentifier` of every object to its `entryUUID` and reserves a new property, `reservedLegacyExternalIamIdentifier`, for the ID of an external IAM. The importer still looked up its objects by `univentionObjectIdentifier`. It deleted the imported groups and created them again without members, and it failed to create the users a second time. The AD IDs were restored from the log of the migration job, the recreated groups were deleted, and the importer now uses `reservedLegacyExternalIamIdentifier`. No user was deleted or disabled.
 
