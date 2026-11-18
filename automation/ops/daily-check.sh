@@ -29,7 +29,8 @@
 #                     (05 F2/F3/F6), importer, sync of the app groups (16), IMAPS for
 #                     a mail archive if set up (20), split DNS and strictARP (03)
 #  8 etcd             every member healthy, as many members as control plane nodes,
-#                     a leader (13), size, age of the newest backup
+#                     a leader (13), size, age of the newest backup; the daily copy of
+#                     migrations-status if it runs from cron (19)
 #
 # Known exceptions (deployments at 0 replicas, services without endpoints):
 #   DAILY_IGNORE="opendesk/some-service|other-ns/.*" in lab.env (regex on namespace/name)
@@ -385,6 +386,17 @@ else
   age=$(( ($(date +%s) - ${newest%%.*}) / 86400 ))
   info "newest etcd backup: ${newest#* } ($age days old)"
   [[ "$age" -le 7 ]] || note "the newest etcd backup is $age days old – ./ops/etcd-backup.sh NAME"
+fi
+
+if crontab -l 2>/dev/null | grep -q 'migrations-status-backup'; then
+  msdir="${STATE_BACKUP_DIR:-$HOME/backups/opendesk-state}"
+  newest="$(find "$msdir" -maxdepth 1 -name 'migrations-status-*.yaml' -printf '%T@ %f\n' 2>/dev/null | sort -n | tail -1)"
+  if [[ -z "$newest" ]]; then
+    check "migrations-status: no copy in $msdir – ./ops/migrations-status-backup.sh (doc 19)" false
+  else
+    hours=$(( ($(date +%s) - ${newest%%.*}) / 3600 ))
+    check "migrations-status: newest copy ${newest#* } ($hours hours old, doc 19)" test "$hours" -le 26
+  fi
 fi
 
 echo
