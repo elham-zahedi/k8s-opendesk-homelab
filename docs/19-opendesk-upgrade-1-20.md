@@ -50,6 +50,8 @@ chmod 600 $B/*; ls -lh $B
 
 ✔ **Expected:** all Longhorn backups `Completed`, the etcd backup with ✔, no dump smaller than about 1 KB. The folder holds secrets: it stays on the kubespray VM.
 
+Between upgrades, [`ops/migrations-status-backup.sh`](../automation/ops/migrations-status-backup.sh) saves `migrations-status` every night from cron, shortly before the Longhorn backup, so that every nightly backup has a matching copy (`~/backups/opendesk-state/`, 30 days).
+
 ### 1.2 Render the new release first
 
 There was no separate test environment. Instead, each new tag was checked out into a second folder with `git worktree` and rendered with the planned values, without touching the cluster:
