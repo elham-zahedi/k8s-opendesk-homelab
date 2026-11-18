@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # 08 – Values files for single openDesk releases (customization.release.<release>):
 #      OpenProject  – the SSRF protection allows the ingress address LB_IP
-#      Element      – end-to-end encryption off (only with ELEMENT_E2EE_OFF=yes)
+#      Element      – end-to-end encryption off (only with ELEMENT_E2EE_OFF=yes); the file and
+#                     the release depend on OPENDESK_VERSION (opendesk-well-known before
+#                     v1.19.0, element from v1.19.0)
 #      OX App Suite – CREDSTORAGE_PASSCRYPT stays the same over upgrades (before v1.20.0)
 #
 # Doc:     docs/15-opendesk-customization.md
@@ -33,7 +35,7 @@ VALUES="$OPENDESK_DIR/helmfile/environments/$OPENDESK_ENV/values.yaml.gotmpl"
 [[ -f "$VALUES" ]] || die "$VALUES not found – run 03-opendesk/prepare-opendesk.sh first"
 NS="$OPENDESK_NAMESPACE"
 # key in customization.release -> name of the helmfile release
-declare -A RELEASE=([openproject]=openproject [opendeskWellKnown]=opendesk-well-known [openxchange]=open-xchange)
+declare -A RELEASE=([openproject]=openproject [opendeskWellKnown]=opendesk-well-known [opendeskElement]=element [openxchange]=open-xchange)
 ROLLOUT=()
 BACKUP=""
 
@@ -99,17 +101,27 @@ fi
 
 # ------------------------------------------------------------------------------
 step "2/3 Element: end-to-end encryption"
-e2ee_file="$CUSTOM_DIR/element-e2ee.yaml"
+# openDesk v1.19.0 removed the release opendesk-well-known; the setting moved to the
+# Matrix stack chart (release element) and has another format (doc 19, section 3.4)
+if version_ge "${OPENDESK_VERSION#v}" 1.19.0; then
+  e2ee_key=opendeskElement; e2ee_name=element-e2ee-1.19.yaml
+else
+  e2ee_key=opendeskWellKnown; e2ee_name=element-e2ee.yaml
+fi
+e2ee_file="$CUSTOM_DIR/$e2ee_name"
 if ! app_enabled element; then
   info "Element is switched off in the configuration – skipped"
 elif [[ "$ELEMENT_E2EE_OFF" != yes ]]; then
   info "ELEMENT_E2EE_OFF=$ELEMENT_E2EE_OFF – Element keeps the encryption as openDesk ships it"
-  if listed opendeskWellKnown "$e2ee_file"; then
-    warn "customization.release.opendeskWellKnown still lists $e2ee_file – remove it by hand to switch the encryption on again (doc 15, section 3)"
+  if listed "$e2ee_key" "$e2ee_file"; then
+    warn "customization.release.$e2ee_key still lists $e2ee_file – remove it by hand to switch the encryption on again (doc 15, section 3)"
   fi
 else
-  put_file element-e2ee.yaml <"$MANIFESTS/element-e2ee.yaml"
-  add_to_release opendeskWellKnown "$e2ee_file"
+  put_file "$e2ee_name" <"$MANIFESTS/$e2ee_name"
+  add_to_release "$e2ee_key" "$e2ee_file"
+fi
+if [[ "$e2ee_key" == opendeskElement ]] && yq -e '(.customization.release.opendeskWellKnown // []) | length > 0' "$VALUES" >/dev/null 2>&1; then
+  warn "customization.release.opendeskWellKnown has no effect since openDesk v1.19.0 – remove it by hand (doc 19, section 3.4)"
 fi
 
 # ------------------------------------------------------------------------------

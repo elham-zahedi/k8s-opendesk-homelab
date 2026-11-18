@@ -17,9 +17,10 @@ The values files go to `CUSTOM_DIR` (default `~/opendesk-custom`), outside the r
 | File | Release | When |
 |---|---|---|
 | [`manifests/openproject-ssrf.yaml`](manifests/openproject-ssrf.yaml) | `openproject` | OpenProject switched on and `OPENPROJECT_SSRF_ALLOW=yes`; `@LB_IP@` is replaced |
-| [`manifests/element-e2ee.yaml`](manifests/element-e2ee.yaml) | `opendesk-well-known` | Element switched on and `ELEMENT_E2EE_OFF=yes` |
+| [`manifests/element-e2ee.yaml`](manifests/element-e2ee.yaml) | `opendesk-well-known` | Element switched on, `ELEMENT_E2EE_OFF=yes` and openDesk before v1.19.0 |
+| [`manifests/element-e2ee-1.19.yaml`](manifests/element-e2ee-1.19.yaml) | `element` (key `opendeskElement`) | Element switched on, `ELEMENT_E2EE_OFF=yes` and openDesk v1.19.0 or later |
 | `openxchange-passcrypt.yaml` (written from the running secret, chmod 600) | `open-xchange` | OX switched on, `OX_PIN_PASSCRYPT=yes` and openDesk before v1.20.0 |
 
 ## Not automated
 
-- Removing an entry from `customization.release`, e.g. to switch the chat encryption on again or after the upgrade to openDesk v1.20.0 – a deliberate step by hand (doc 15, sections 3 and 4).
+- Removing an entry from `customization.release`, e.g. to switch the chat encryption on again, the obsolete `opendeskWellKnown` after the upgrade to openDesk v1.19.0 (the script warns), or the OX file after v1.20.0 – a deliberate step by hand (doc 15, sections 3 and 4; doc 19, section 3.4).

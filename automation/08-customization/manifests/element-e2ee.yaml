@@ -1,5 +1,6 @@
 # Element: end-to-end encryption off (doc 15, section 3). Values file for the release
-# "opendeskWellKnown", only used with ELEMENT_E2EE_OFF=yes.
+# "opendesk-well-known" (customization.release.opendeskWellKnown), openDesk before v1.19.0,
+# only used with ELEMENT_E2EE_OFF=yes. From v1.19.0: element-e2ee-1.19.yaml.
 #
 # A decision, not a technical requirement: in this lab the chat runs without end-to-end
 # encryption. Decide again before the chat is used for confidential messages.
