@@ -72,6 +72,8 @@ flowchart LR
 | 06 | [Adding a worker node](docs/06-add-worker-node.md) | Joining node6 with `scale.yml`, fixing a stale fact cache |
 | 13 | [Three control plane nodes](docs/13-three-control-plane-nodes.md) | VMs spread over three Proxmox hosts, two more control plane and etcd nodes with Kubespray, failover test |
 | 16 | [openDesk apps per AD group](docs/16-app-access-by-ad-group.md) | Chat and projects only for the members of AD groups (nested groups included), synchronized every 15 minutes from cron |
+| 19 | [Upgrading openDesk from 1.17.2 to 1.20.2](docs/19-opendesk-upgrade-1-20.md) | Three steps with backup, render and dry runs: CA for the migration jobs, chat to the Matrix Authentication Service, Postfix without root, cleanup of old Helm revisions |
+| 20 | [IMAP access for a mail archive](docs/20-imap-archive-master-user.md) | Dovecot master user for an archive server through a values file, IMAPS on its own MetalLB address, accepted only from the archive server |
 
 ### Troubleshooting runbooks
 
@@ -102,6 +104,8 @@ The [`automation/`](automation/) folder contains Bash scripts that rebuild the l
 - **A missing kernel module can stop an application.** Ubuntu cloud images ship without `linux-modules-extra`. Without `nls_utf8` the SMB mounts failed and Nextcloud would not start – this must be re-checked after every kernel update.
 - **Rollouts can silently undo manual changes.** The openDesk Nextcloud management job disables `files_external` on every rollout, so users lost their file server folders. It is now a mandatory post-rollout check.
 - **A backup can break the storage of a running cluster.** The nightly Proxmox backup froze the file systems of the nodes through the guest agent. After the VMs were spread over three hosts, two nodes were frozen at the same time, Longhorn timed out and PostgreSQL got I/O errors. Longhorn still showed every volume as `healthy`; only a write test in the pods found the broken mounts.
+- **A dry run can consume a one-time migration.** openDesk 1.19 recorded the dry run of its cleanup of orphaned chat accounts as done; with `dryRun: false` the action did not run again.
+- **An address limit needs the real client address.** The IMAP master user for the mail archive is bound to the archive's address; that only works because the Service keeps the client address (`externalTrafficPolicy: Local`).
 - **Stale facts break `scale.yml`.** Adding a node with `--limit` failed because the fact cache of the control plane was incomplete. Running `facts.yml` without a limit first solved it.
 
 ## Security note
