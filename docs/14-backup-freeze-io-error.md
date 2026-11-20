@@ -183,6 +183,61 @@ Longhorn reports the state of the volume: its engine and its replicas. After the
 - `healthy` in Longhorn does not prove that the pods can write. The daily check now writes a test file in every mount.
 - The backup error names only the first broken mount of a node. Check all pods, not only the one that failed.
 
+## 7. Follow-up on 20.11.2026: the control plane went down during every backup
+
+Two weeks later the same backup still hurt the cluster, without a single error in the morning: the three `kube-apiserver` pods had more than 100 restarts each in 17 days. Every night, during the backup, etcd lost its leader for a few minutes. The pods of the users kept running, but everything that needs the API failed in that time. The daily check now reports restarts of the control plane.
+
+### 7.1 Diagnosis
+
+**Run on:** kubespray VM as k8s
+
+```bash
+# 1. Which containers restarted in the last 24 hours, and when (UTC)?
+kubectl get pods -A -o json | jq -r '.items[] | .metadata.namespace as $ns | .metadata.name as $p
+  | .status.containerStatuses[]? | select(.lastState.terminated.finishedAt != null
+  and (.lastState.terminated.finishedAt > (now - 86400 | todate)))
+  | "\(.lastState.terminated.finishedAt)  \($ns)/\($p) [\(.name)] exit=\(.lastState.terminated.exitCode)"' | sort
+
+# 2. When did the kubelet kill the API server, per hour, on every control plane node?
+for h in 10.240.0.21 10.240.0.31 10.240.0.32; do   # the control plane nodes (doc 13)
+  ssh "$ANSIBLE_USER@$h" "sudo journalctl -u kubelet --since '-4 days' --no-pager | grep -E 'Killing container.*kube-apiserver' | awk '{print \$1, \$2, substr(\$3,1,2)\":00\"}' | uniq -c"
+done
+
+# 3. Was etcd slow? (etcd runs as a systemd service on the control plane nodes)
+ssh "$ANSIBLE_USER@10.240.0.21" "sudo journalctl -u etcd --since '-1 day' --no-pager | grep -c -E 'slow fdatasync|took too long'"
+```
+
+What it showed:
+
+- Between 20:00 and 20:09 the three `kube-apiserver` were killed (`exit=137`, failed liveness probe), then `kube-controller-manager`, `kube-scheduler`, the Longhorn CSI sidecars, cert-manager, MetalLB, calico and the `leader-elector` of the LDAP server restarted (`exit=1`, API not reachable).
+- The kubelet killed the API servers only between 20:00 and 22:00, every night.
+- etcd logged about 2000 warnings per node in that hour: `slow fdatasync` up to 4 seconds (expected: below 1 second), then `lost leader` and `no leader`. All three members were slow at the same time, so etcd had no quorum.
+
+### 7.2 Root cause
+
+The disks of all Kubernetes VMs, the control plane nodes included, are on one shared NFS storage with hard disks. One backup job with node "all" started at 20:00 on all three Proxmox hosts at once, and a second job for other VMs started at the same time. Four backups read from the same storage, and every VM on it waited for its writes. etcd was slow already at 20:00:08, while its own node was not yet being backed up: the shared storage was the bottleneck, not the backup of a single VM.
+
+The night after the kernel update of all nodes ([10](10-node-schedulingdisabled.md)) was the worst: a restart of a VM clears the dirty bitmap of the incremental backup, so the next backup reads the whole disk (120 GB per VM) and runs for hours.
+
+### 7.3 Fix
+
+In Proxmox, Datacenter → Backup:
+
+| Job | VMs | Start (UTC) |
+|---|---|---|
+| Kubernetes-1 | VMs on the first host, with the first control plane node | 20:00 |
+| Kubernetes-2 | VMs on the second host, with the second control plane node | 20:20 |
+| Kubernetes-3 | VMs on the third host, with the third control plane node | 20:40 |
+| Other VMs | everything else on the same storage | 21:00 |
+
+- Only one backup reads from the storage at a time, and only one etcd member is under load: the other two keep the quorum.
+- Bandwidth limit 40 MiB/s per job (Advanced). An incremental backup still takes only a few minutes per host.
+- Create the new jobs first, then remove their VMs from the old job, so that no VM is without a backup. Set the same retention as before: a new job shows `Fallback from storage config`, which may prune differently.
+
+**Verify the next morning:** step 1 of 7.1 lists no restart of the control plane, and etcd logs (almost) no `slow fdatasync`. After a restart of the VMs the first backup reads the whole disks again and the jobs can overlap: watch that night.
+
+Longer term, etcd and Longhorn need fast disks (SSD). Shared hard disks are enough for a lab, not for a few hundred users.
+
 ---
 
 Previous: [13 – Three control plane nodes](13-three-control-plane-nodes.md) · Next: [15 – openDesk settings per release](15-opendesk-customization.md) · Back to the [overview](../README.md)
