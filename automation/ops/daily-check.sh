@@ -29,7 +29,8 @@
 #                     (05 F2/F3/F6), importer, sync of the app groups (16), IMAPS for
 #                     a mail archive if set up (20), split DNS and strictARP (03)
 #  8 etcd             every member healthy, as many members as control plane nodes,
-#                     a leader (13), size, age of the newest backup; the daily copy of
+#                     a leader (13), no restart of the control plane in the last 24 hours
+#                     (14 section 7), size, age of the newest backup; the daily copy of
 #                     migrations-status if it runs from cron (19)
 #
 # Known exceptions (deployments at 0 replicas, services without endpoints):
@@ -374,6 +375,17 @@ else
   check "etcd: $ETCD_MEMBERS members, as many as control plane nodes in NODES" test "$ETCD_MEMBERS" -eq "$cps"
   check "etcd has a leader (${ETCD_LEADER:-none})" test -n "$ETCD_LEADER"
 fi
+# A backup that slows down the shared storage can take etcd's quorum for a few minutes in
+# the night: the API servers are killed and restart. In the morning everything is healthy
+# again, only the restarts are left (runbook 14 section 7).
+cp_restarts="$(jq -r '.items[] | select(.metadata.namespace == "kube-system")
+  | select(.metadata.name | test("^(kube-apiserver|kube-controller-manager|kube-scheduler)-"))
+  | .metadata.name as $p | .status.containerStatuses[]?
+  | select(.lastState.terminated.finishedAt != null)
+  | select((now - (.lastState.terminated.finishedAt | fromdateiso8601)) < 86400)
+  | "\($p): last restart \(.lastState.terminated.finishedAt) (UTC), exit \(.lastState.terminated.exitCode), \(.restartCount) restarts in total"' <<<"$pods")"
+check "control plane: no restart of kube-apiserver, kube-controller-manager or kube-scheduler in the last 24 hours (runbook 14 section 7)" test -z "$cp_restarts"
+list "$cp_restarts"
 size="$ETCD_DB_SIZE"
 if [[ -n "$size" ]]; then
   info "etcd database: $((size / 1000000)) MB (limit 2 GB; space is only freed by a defragmentation)"
