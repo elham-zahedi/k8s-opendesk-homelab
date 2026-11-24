@@ -236,6 +236,35 @@ In Proxmox, Datacenter → Backup:
 
 **Verify the next morning:** step 1 of 7.1 lists no restart of the control plane, and etcd logs (almost) no `slow fdatasync`. After a restart of the VMs the first backup reads the whole disks again and the jobs can overlap: watch that night.
 
+### 7.4 Follow-up on 23.11.2026: one job still without a limit
+
+After 7.3 the API servers stayed up. But the restart counters of `kube-controller-manager` and `kube-scheduler` still grew every night (exit 1), and the `leader-elector` of the LDAP server restarted too. Step 1 of 7.1 showed the last restarts at 21:02 – 21:05 UTC, one hour after the Kubernetes jobs.
+
+The etcd warnings per hour on every control plane node:
+
+```bash
+for h in 10.240.0.21 10.240.0.31 10.240.0.32; do   # the control plane nodes (doc 13)
+  echo "== $h"
+  ssh "$ANSIBLE_USER@$h" "sudo journalctl -u etcd --since '-3 days' --no-pager | grep -E 'slow fdatasync|took too long|lost leader|no leader' | awk '{print \$1, \$2, substr(\$3,1,2)\":00\"}' | uniq -c"
+done
+```
+
+The first two nodes only logged warnings at 20:00 UTC (27 – 122 per hour, during the Kubernetes jobs, without restarts). The third node logged 1138, 1840 and 1331 warnings at 21:00 UTC in three nights: the hour of the job for the other VMs.
+
+**Cause.** The job for the other VMs runs on the third host and had no bandwidth limit. It read as fast as the host could, and every VM on that host waited for its disks, the third control plane node too. One slow member does not cost etcd its quorum, so the API servers stayed up. But the controller manager and the scheduler must renew their leader lease every few seconds. When that takes too long, they stop on purpose (exit 1) and the kubelet starts them again.
+
+**Fix.** The same limit for that job: Datacenter → Backup → the job → Advanced → Bandwidth limit 40 MiB/s. Check all jobs on one Proxmox host (the file is the same on every host of the cluster):
+
+```bash
+grep -E '^vzdump:|^\s+(comment|schedule|bwlimit)' /etc/pve/jobs.cfg
+```
+
+✔ **Expected:** every job that backs up VMs on the same storage has `bwlimit 40960` (KiB/s).
+
+**Result the next night:** no restart of the control plane or of the LDAP `leader-elector`. The third node logged 117 etcd warnings at 21:00 UTC instead of more than 1100, and the daily check passed.
+
+**Lesson:** the bandwidth limit belongs on every backup job that reads from the same storage, not only on the jobs of the cluster.
+
 Longer term, etcd and Longhorn need fast disks (SSD). Shared hard disks are enough for a lab, not for a few hundred users.
 
 ---
