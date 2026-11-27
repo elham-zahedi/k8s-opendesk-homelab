@@ -6,11 +6,11 @@ Every build step is documented with the exact commands, the expected results and
 
 ## Highlights
 
-- **Cluster:** 1 control plane + 6 workers, built with Kubespray on VMs cloned from a Proxmox cloud-init template
+- **Cluster:** 3 control planes + 6 workers spread over three Proxmox hosts, built with Kubespray on VMs cloned from a Proxmox cloud-init template
 - **Networking:** Calico on a VXLAN SDN (MTU 1450), kube-proxy in IPVS mode, MetalLB (L2) and HAProxy Ingress
 - **DNS:** split DNS – only the cluster and AD zones are forwarded to the domain controller (CoreDNS and NodeLocal DNSCache)
 - **Storage:** Longhorn (iSCSI) for persistent volumes, SMB CSI driver for the Windows file server shares
-- **Applications:** openDesk v1.17.2 deployed with helmfile – Nubus portal, Nextcloud, Collabora Online, OX App Suite (mail, calendar, contacts)
+- **Applications:** openDesk v1.20.2 deployed with helmfile – Nubus portal, Nextcloud, Collabora Online, OX App Suite (mail, calendar, contacts)
 - **Identity:** 500 users and 22 groups imported from Active Directory; "Login with AD account" via a dedicated Keycloak (LDAPS federation, OIDC); access to the apps managed with AD groups
 - **Operations:** etcd snapshots before every change, adding and replacing worker nodes, failure drills
 
@@ -54,7 +54,7 @@ flowchart LR
 | Networking | MetalLB 0.16.1 (L2), HAProxy Ingress 0.16.1, kube-proxy IPVS, CoreDNS + NodeLocal DNSCache |
 | Storage | Longhorn 1.12.1, SMB CSI driver 1.20.3 |
 | Certificates | cert-manager v1.21.1 with an internal CA |
-| Applications | openDesk v1.17.2 (helmfile 1.7.3): Nubus, Nextcloud, Collabora Online, OX App Suite |
+| Applications | openDesk v1.20.2 (helmfile 1.7.3): Nubus, Nextcloud, Collabora Online, OX App Suite |
 | Identity | Active Directory (Windows Server 2022), Keycloak 26.7.3, Nubus Directory Importer 1.7.2 |
 | Tooling | Ansible, Helm, helmfile, kubectl, yq, tmux |
 
