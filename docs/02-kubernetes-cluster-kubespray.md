@@ -312,7 +312,7 @@ ansible -i inventory/mycluster/inventory.ini all -m ping
 
 ✔ **Expected:** 6× `pong`.
 
-### 4.3 /etc/hosts and chrony on all nodes
+### 4.3 /etc/hosts, chrony and MPTCP on all nodes
 
 Since v2.29, Kubespray no longer adds the nodes to `/etc/hosts`. In addition, Proxmox cloud-init rewrites `/etc/hosts` on every boot. That is why the entries are also written into the cloud-init template `/etc/cloud/templates/hosts.debian.tmpl`.
 
@@ -335,6 +335,15 @@ ansible -i inventory/mycluster/inventory.ini all -b -m shell -a "timedatectl | g
 ✔ **Expected:** on all 6 nodes: `10.240.0.26 node5`, `System clock synchronized: yes`, `Swap 0B`.
 
 > **Note:** chrony automatically replaces systemd-timesyncd. The line `127.0.1.1 node5 node5` on node5 itself is the Ubuntu default and harmless, because Kubespray uses the `ip=` values.
+
+**MPTCP off.** MPTCP is not needed in the cluster. Because of CVE-2026-98432 it is switched off on all nodes and stays off, also after a kernel update that fixes the vulnerability. `automation/02-kubespray/prepare-nodes.yml` writes the setting; by hand:
+
+```bash
+ansible -i inventory/mycluster/inventory.ini all -b -m shell -a "echo 'net.mptcp.enabled = 0' > /etc/sysctl.d/90-disable-mptcp.conf && sysctl --system >/dev/null"
+ansible -i inventory/mycluster/inventory.ini all -b -m command -a "sysctl -n net.mptcp.enabled"
+```
+
+✔ **Expected:** `0` on all 6 nodes.
 
 ## 5. Cluster configuration
 
