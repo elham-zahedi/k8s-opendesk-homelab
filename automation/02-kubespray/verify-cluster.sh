@@ -5,7 +5,7 @@
 # Run on:  kubespray VM as k8s
 # Usage:   ./verify-cluster.sh
 #
-# Checks nodes, system pods, API server, etcd and metrics-server, then runs the
+# Checks nodes (MPTCP off), system pods, API server, etcd and metrics-server, then runs the
 # functional tests in a temporary namespace "acceptance-test": nginx deployment,
 # DNS, service by name, pod-to-pod across nodes with an MTU test, and NodePort on
 # every node. The namespace is deleted at the end – safe on a running cluster.
@@ -51,6 +51,10 @@ for name in "${NODE_NAMES[@]}"; do
 done
 check "no node is NotReady"                 bash -c "! grep -q NotReady <<<\"\$1\"" _ "$nodes_out"
 check "all kube-system pods Running"        test -z "$(k -n kube-system get pods --no-headers | grep -vE ' Running | Completed ')"
+for i in "${!NODE_NAMES[@]}"; do
+  mptcp="$(ssh -o BatchMode=yes "$ANSIBLE_USER@${NODE_IPS[$i]}" 'sysctl -n net.mptcp.enabled' 2>/dev/null || true)"
+  check "MPTCP is off on ${NODE_NAMES[$i]}"  test "$mptcp" = 0
+done
 
 step "2/4 API server, etcd, metrics-server"
 check "API server: readyz"                  test "$(k get --raw=/readyz)" = ok

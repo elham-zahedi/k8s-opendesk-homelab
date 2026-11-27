@@ -81,3 +81,18 @@
         name: qemu-guest-agent
         state: restarted
       when: qga_conf.changed and not ansible_check_mode
+
+    # MPTCP is not needed in the cluster. It stays off because of CVE-2026-98432,
+    # also after a kernel update that fixes the vulnerability.
+    - name: Disable MPTCP
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/90-disable-mptcp.conf
+        content: |
+          net.mptcp.enabled = 0
+        mode: "0644"
+      notify: Apply sysctl
+
+  handlers:
+    - name: Apply sysctl
+      ansible.builtin.command: sysctl --system
+      changed_when: true
